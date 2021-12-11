@@ -10,7 +10,7 @@ Configure any other options if needed.
 | --- | --- |
 |email|Email address.
 |password|Password.
-|format|Download quality. 1 = 16-bit / 44.1 kHz ALAC, 2 = 16-bit / 44.1 kHz FLAC, 3 = 24-bit / 48 kHz MQA (or next best), 4 =  360 Reality Audio (or next best). 5 = AAC 150.
+|format|Download quality. 1 = 16-bit / 44.1 kHz ALAC, 2 = 16-bit / 44.1 kHz FLAC, 3 = 24-bit / 48 kHz MQA (or next best), 4 =  360 Reality Audio (or next best), 5 = AAC 150.
 |outPath|Where to download to. Path will be made if it doesn't already exist.
 
 # Usage
