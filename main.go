@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"runtime"
 	"strconv"
@@ -117,6 +118,7 @@ func parseCfg() (*Config, error) {
 		2: 3,
 		3: 5,
 		4: 8,
+		5: 10,
 	}
 	cfg, err := readConfig()
 	if err != nil {
@@ -126,8 +128,8 @@ func parseCfg() (*Config, error) {
 	if args.Format != -1 {
 		cfg.Format = args.Format
 	}
-	if !(cfg.Format >= 1 && cfg.Format <= 4) {
-		return nil, errors.New("Format must be between 1 and 4.")
+	if !(cfg.Format >= 1 && cfg.Format <= 5) {
+		return nil, errors.New("Format must be between 1 and 5.")
 	}
 	cfg.Format = resolveFormat[cfg.Format]
 	if args.OutPath != "" {
@@ -262,6 +264,14 @@ func getSubInfo(token string) (*SubInfo, error) {
 	return &obj, nil
 }
 
+func getPlan(subInfo *SubInfo) (string, bool) {
+	if !reflect.ValueOf(subInfo.Plan).IsZero() {
+		return subInfo.Plan.Description, false
+	} else {
+		return subInfo.Promo.Plan.Description, true
+	}
+}
+
 func parseTimestamps(start, end string) (string, string) {
 	const layout = "01/02/2006 15:04:05"
 	startTime, _ := time.Parse(layout, start)
@@ -271,7 +281,7 @@ func parseTimestamps(start, end string) (string, string) {
 	return parsedStart, parsedEnd
 }
 
-func parseStreamParams(userId string, subInfo *SubInfo) *StreamParams {
+func parseStreamParams(userId string, subInfo *SubInfo, isPromo bool) *StreamParams {
 	startStamp, endStamp := parseTimestamps(subInfo.StartedAt, subInfo.EndsAt)
 	streamParams := &StreamParams{
 		SubscriptionID:          subInfo.LegacySubscriptionID,
@@ -279,6 +289,11 @@ func parseStreamParams(userId string, subInfo *SubInfo) *StreamParams {
 		UserID:                  userId,
 		StartStamp:              startStamp,
 		EndStamp:                endStamp,
+	}
+	if isPromo {
+		streamParams.SubCostplanIDAccessList = subInfo.Promo.Plan.ID
+	} else {
+		streamParams.SubCostplanIDAccessList = subInfo.Plan.ID
 	}
 	return streamParams
 }
@@ -360,6 +375,7 @@ func queryQuality(streamUrl string) *Quality {
 		".flac16/": {Specs: "16-bit / 44.1 kHz FLAC", Extension: ".flac"},
 		".mqa24/":  {Specs: "24-bit / 48 kHz MQA", Extension: ".flac"},
 		".s360/":   {Specs: "360 Reality Audio", Extension: ".mp4"},
+		".aac150/": {Specs: "AAC 150", Extension: ".m4a"},
 	}
 	for k, v := range qualityMap {
 		if strings.Contains(streamUrl, k) {
@@ -441,10 +457,11 @@ func main() {
 	if !subInfo.IsContentAccessible {
 		panic("Account subscription required.")
 	}
+	planDesc, isPromo := getPlan(subInfo)
 	fmt.Println(
-		"Signed in successfully - " + subInfo.Plan.Description + "\n",
+		"Signed in successfully - " + planDesc + "\n",
 	)
-	streamParams := parseStreamParams(userId, subInfo)
+	streamParams := parseStreamParams(userId, subInfo, isPromo)
 	albumTotal := len(cfg.Urls)
 	for albumNum, url := range cfg.Urls {
 		fmt.Printf("Album %d of %d:\n", albumNum+1, albumTotal)

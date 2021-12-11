@@ -68,8 +68,26 @@ type SubInfo struct {
 		StartsAt        interface{} `json:"startsAt"`
 		EndsAt          interface{} `json:"endsAt"`
 	} `json:"plan"`
-	Promo   interface{} `json:"promo"`
-	Gateway string      `json:"gateway"`
+	Promo struct {
+		ID            string      `json:"id"`
+		PromoCode     string      `json:"promoCode"`
+		PromoPrice    float64     `json:"promoPrice"`
+		Description   string      `json:"description"`
+		PromoStartsAt interface{} `json:"promoStartsAt"`
+		PromoEndsAt   interface{} `json:"promoEndsAt"`
+		Plan          struct {
+			ID              string      `json:"id"`
+			Price           float64     `json:"price"`
+			Period          int         `json:"period"`
+			TrialPeriodDays int         `json:"trialPeriodDays"`
+			PlanID          string      `json:"planId"`
+			Description     string      `json:"description"`
+			ServiceLevel    string      `json:"serviceLevel"`
+			StartsAt        interface{} `json:"startsAt"`
+			EndsAt          interface{} `json:"endsAt"`
+		} `json:"plan"`
+		Gateway string `json:"gateway"`
+	}
 }
 
 type StreamParams struct {
