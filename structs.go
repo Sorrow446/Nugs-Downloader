@@ -1,26 +1,30 @@
 package main
 
-type MyTransport struct{}
+type Transport struct{}
 
 type WriteCounter struct {
-	Total      uint64
+	Total      int64
 	TotalStr   string
-	Downloaded uint64
+	Downloaded int64
 	Percentage int
+	StartTime  int64
 }
 
 type Config struct {
-	Email    string
-	Password string
-	Urls     []string
-	Format   int
-	OutPath  string
+	Email       string
+	Password    string
+	Urls        []string
+	Format      int
+	OutPath     string
+	VideoFormat int
+	WantRes     string
 }
 
 type Args struct {
-	Urls    []string `arg:"positional, required"`
-	Format  int      `arg:"-f" default:"-1"`
-	OutPath string   `arg:"-o"`
+	Urls        []string `arg:"positional, required"`
+	Format      int      `arg:"-f" default:"-1" help:"Track download format.\n\t\t\t 1 = 16-bit / 44.1 kHz ALAC\n\t\t\t 2 = 16-bit / 44.1 kHz FLAC\n\t\t\t 3 = 24-bit / 48 kHz MQA\n\t\t\t 4 = 360 Reality Audio / best available\n\t\t\t 5 = 150 Kbps AAC"`
+	VideoFormat int      `arg:"-F" default:"-1" help:"Video download format.\n\t\t\t 1 = 480p\n\t\t\t 2 = 720p\n\t\t\t 3 = 1080p\n\t\t\t 4 = 1440p\n\t\t\t 5 = 4K / best available"`
+	OutPath     string   `arg:"-o" help:"Where to download to. Path will be made if it doesn't already exist."`
 }
 
 type Auth struct {
@@ -29,6 +33,25 @@ type Auth struct {
 	TokenType    string `json:"token_type"`
 	RefreshToken string `json:"refresh_token"`
 	Scope        string `json:"scope"`
+}
+
+type Payload struct {
+	Nbf         int      `json:"nbf"`
+	Exp         int      `json:"exp"`
+	Iss         string   `json:"iss"`
+	Aud         []string `json:"aud"`
+	ClientID    string   `json:"client_id"`
+	Sub         string   `json:"sub"`
+	AuthTime    int      `json:"auth_time"`
+	Idp         string   `json:"idp"`
+	Email       string   `json:"email"`
+	LegacyToken string   `json:"legacy_token"`
+	LegacyUguid string   `json:"legacy_uguid"`
+	Jti         string   `json:"jti"`
+	Sid         string   `json:"sid"`
+	Iat         int      `json:"iat"`
+	Scope       []string `json:"scope"`
+	Amr         []string `json:"amr"`
 }
 
 type UserInfo struct {
@@ -98,54 +121,56 @@ type StreamParams struct {
 	EndStamp                string
 }
 
+type Product struct {
+	ProductStatusType    int           `json:"productStatusType"`
+	SkuIDExt             interface{}   `json:"skuIDExt"`
+	FormatStr            string        `json:"formatStr"`
+	SkuID                int           `json:"skuID"`
+	Cost                 int           `json:"cost"`
+	CostplanID           int           `json:"costplanID"`
+	Pricing              interface{}   `json:"pricing"`
+	Bundles              []interface{} `json:"bundles"`
+	NumPublicPricePoints int           `json:"numPublicPricePoints"`
+	CartLink             string        `json:"cartLink"`
+	LiveEventInfo        struct {
+		IsEventLive                  bool        `json:"isEventLive"`
+		EventID                      int         `json:"eventID"`
+		EventStartDateStr            string      `json:"eventStartDateStr"`
+		EventEndDateStr              string      `json:"eventEndDateStr"`
+		TimeZoneToDisplay            interface{} `json:"timeZoneToDisplay"`
+		OffsetFromLocalTimeToDisplay int         `json:"offsetFromLocalTimeToDisplay"`
+		UTCoffset                    int         `json:"UTCoffset"`
+		EventCode                    interface{} `json:"eventCode"`
+		LinkType                     int         `json:"linkType"`
+	} `json:"liveEventInfo"`
+	SaleWindowInfo struct {
+		IsEventSelling               bool        `json:"isEventSelling"`
+		SswID                        int         `json:"sswID"`
+		TimeZoneToDisplay            interface{} `json:"timeZoneToDisplay"`
+		OffsetFromLocalTimeToDisplay int         `json:"offsetFromLocalTimeToDisplay"`
+		SaleStartDateStr             interface{} `json:"saleStartDateStr"`
+		SaleEndDateStr               interface{} `json:"saleEndDateStr"`
+	} `json:"saleWindowInfo"`
+	IosCost         int         `json:"iosCost"`
+	IosPlanName     interface{} `json:"iosPlanName"`
+	GooglePlanName  interface{} `json:"googlePlanName"`
+	GoogleCost      int         `json:"googleCost"`
+	NumDiscs        int         `json:"numDiscs"`
+	IsSubStreamOnly int         `json:"isSubStreamOnly"`
+}
+
 type AlbumMeta struct {
 	MethodName                  string `json:"methodName"`
 	ResponseAvailabilityCode    int    `json:"responseAvailabilityCode"`
 	ResponseAvailabilityCodeStr string `json:"responseAvailabilityCodeStr"`
 	Response                    struct {
-		NumReviews                int    `json:"numReviews"`
-		TotalContainerRunningTime int    `json:"totalContainerRunningTime"`
-		HhmmssTotalRunningTime    string `json:"hhmmssTotalRunningTime"`
-		Products                  []struct {
-			ProductStatusType    int           `json:"productStatusType"`
-			SkuIDExt             interface{}   `json:"skuIDExt"`
-			FormatStr            string        `json:"formatStr"`
-			SkuID                int           `json:"skuID"`
-			Cost                 int           `json:"cost"`
-			CostplanID           int           `json:"costplanID"`
-			Pricing              interface{}   `json:"pricing"`
-			Bundles              []interface{} `json:"bundles"`
-			NumPublicPricePoints int           `json:"numPublicPricePoints"`
-			CartLink             string        `json:"cartLink"`
-			LiveEventInfo        struct {
-				IsEventLive                  bool        `json:"isEventLive"`
-				EventID                      int         `json:"eventID"`
-				EventStartDateStr            string      `json:"eventStartDateStr"`
-				EventEndDateStr              string      `json:"eventEndDateStr"`
-				TimeZoneToDisplay            interface{} `json:"timeZoneToDisplay"`
-				OffsetFromLocalTimeToDisplay int         `json:"offsetFromLocalTimeToDisplay"`
-				UTCoffset                    int         `json:"UTCoffset"`
-				EventCode                    interface{} `json:"eventCode"`
-				LinkType                     int         `json:"linkType"`
-			} `json:"liveEventInfo"`
-			SaleWindowInfo struct {
-				IsEventSelling               bool        `json:"isEventSelling"`
-				SswID                        int         `json:"sswID"`
-				TimeZoneToDisplay            interface{} `json:"timeZoneToDisplay"`
-				OffsetFromLocalTimeToDisplay int         `json:"offsetFromLocalTimeToDisplay"`
-				SaleStartDateStr             interface{} `json:"saleStartDateStr"`
-				SaleEndDateStr               interface{} `json:"saleEndDateStr"`
-			} `json:"saleWindowInfo"`
-			IosCost         int         `json:"iosCost"`
-			IosPlanName     interface{} `json:"iosPlanName"`
-			GooglePlanName  interface{} `json:"googlePlanName"`
-			GoogleCost      int         `json:"googleCost"`
-			NumDiscs        int         `json:"numDiscs"`
-			IsSubStreamOnly int         `json:"isSubStreamOnly"`
-		} `json:"products"`
-		Subscriptions interface{} `json:"subscriptions"`
-		Tracks        []Tracks
-		Pics          []struct {
+		NumReviews                int         `json:"numReviews"`
+		TotalContainerRunningTime int         `json:"totalContainerRunningTime"`
+		HhmmssTotalRunningTime    string      `json:"hhmmssTotalRunningTime"`
+		Products                  []Product   `json:"products"`
+		Subscriptions             interface{} `json:"subscriptions"`
+		Tracks                    []Track     `json:"tracks"`
+		Pics                      []struct {
 			PicID   int    `json:"picID"`
 			OrderID int    `json:"orderID"`
 			Height  int    `json:"height"`
@@ -283,7 +308,82 @@ type AlbumMeta struct {
 	} `json:"Response"`
 }
 
-type Tracks struct {
+type Token struct {
+	MethodName string `json:"methodName"`
+	Response   struct {
+		TokenValue     string      `json:"tokenValue"`
+		ReturnCode     int         `json:"returnCode"`
+		ReturnCodeStr  string      `json:"returnCodeStr"`
+		NnCustomerAuth interface{} `json:"nnCustomerAuth"`
+	} `json:"Response"`
+	ResponseAvailabilityCode    int    `json:"responseAvailabilityCode"`
+	ResponseAvailabilityCodeStr string `json:"responseAvailabilityCodeStr"`
+	SessionState                int    `json:"sessionState"`
+	SessionStateStr             string `json:"sessionStateStr"`
+}
+
+type PlistMeta struct {
+	MethodName string `json:"methodName"`
+	Response   struct {
+		TotalRunningTime       int    `json:"totalRunningTime"`
+		HhmmssTotalRunningTime string `json:"hhmmssTotalRunningTime"`
+		ID                     int    `json:"ID"`
+		UserID                 int    `json:"userID"`
+		Items                  []struct {
+			ID                int   `json:"ID"`
+			OrderID           int   `json:"orderID"`
+			Track             Track `json:"track"`
+			PlaylistContainer struct {
+				TotalRunningTime       int         `json:"totalRunningTime"`
+				HhmmssTotalRunningTime interface{} `json:"hhmmssTotalRunningTime"`
+				Img                    struct {
+					PicID   int    `json:"picID"`
+					OrderID int    `json:"orderID"`
+					Height  int    `json:"height"`
+					Width   int    `json:"width"`
+					Caption string `json:"caption"`
+					URL     string `json:"url"`
+				} `json:"img"`
+				ContainerInfo          string      `json:"containerInfo"`
+				Products               []Product   `json:"products"`
+				VenueName              string      `json:"venueName"`
+				VenueCity              string      `json:"venueCity"`
+				VenueState             string      `json:"venueState"`
+				ArtistName             string      `json:"artistName"`
+				Venue                  string      `json:"venue"`
+				ContainerID            int         `json:"containerID"`
+				PerformanceDate        string      `json:"performanceDate"`
+				ReleaseDate            interface{} `json:"releaseDate"`
+				ContainerType          int         `json:"containerType"`
+				ArtistID               int         `json:"artistID"`
+				TitleType              int         `json:"titleType"`
+				StrTotalRunningTime    string      `json:"strTotalRunningTime"`
+				ContainerCategoryID    int         `json:"containerCategoryID"`
+				ContainerCategoryName  interface{} `json:"containerCategoryName"`
+				ContainerCategoryOrder int         `json:"containerCategoryOrder"`
+				Availability           int         `json:"availability"`
+				TicketImage            interface{} `json:"ticketImage"`
+				UnavailableNote        interface{} `json:"unavailableNote"`
+				Numasterisks           string      `json:"numasterisks"`
+				CoverImage             interface{} `json:"coverImage"`
+			} `json:"playlistContainer"`
+		} `json:"items"`
+		CreateDate          interface{} `json:"createDate"`
+		PlayListName        string      `json:"playListName"`
+		AlreadyExistsFlag   bool        `json:"alreadyExistsFlag"`
+		PlayListUserInvalid bool        `json:"playListUserInvalid"`
+		PlaylistImage       interface{} `json:"playlistImage"`
+		NumTracks           int         `json:"numTracks"`
+		GeneratedGUID       interface{} `json:"generatedGUID"`
+		ShortenedLink       interface{} `json:"shortenedLink"`
+	} `json:"Response"`
+	ResponseAvailabilityCode    int    `json:"responseAvailabilityCode"`
+	ResponseAvailabilityCodeStr string `json:"responseAvailabilityCodeStr"`
+	SessionState                int    `json:"sessionState"`
+	SessionStateStr             string `json:"sessionStateStr"`
+}
+
+type Track struct {
 	AccessList             []interface{} `json:"accessList"`
 	HhmmssTotalRunningTime string        `json:"hhmmssTotalRunningTime"`
 	TrackLabel             string        `json:"trackLabel"`
@@ -306,7 +406,7 @@ type Tracks struct {
 	SkuIDExt               interface{}   `json:"skuIDExt"`
 	TransportMethod        string        `json:"transportMethod"`
 	StrTotalRunningTime    interface{}   `json:"strTotalRunningTime"`
-	Products               []interface{} `json:"products"`
+	Products               []Product     `json:"products"`
 	Subscriptions          interface{}   `json:"subscriptions"`
 	AudioProduct           interface{}   `json:"audioProduct"`
 	AudioLosslessProduct   interface{}   `json:"audioLosslessProduct"`
@@ -340,4 +440,6 @@ type StreamMeta struct {
 type Quality struct {
 	Specs     string
 	Extension string
+	URL       string
+	Format    int
 }

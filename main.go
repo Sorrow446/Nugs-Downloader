@@ -2,6 +2,8 @@ package main
 
 import (
 	"bufio"
+	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,32 +13,102 @@ import (
 	"net/http/cookiejar"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"regexp"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/alexflint/go-arg"
 	"github.com/dustin/go-humanize"
+	"github.com/grafov/m3u8"
 )
 
-const userAgent = "NugsNet/3.12.3.657 (Android; 7.1.2; samsung; SM-N976N)"
+const (
+	devKey        = "x7f54tgbdyc64y656thy47er4"
+	clientId      = "Eg7HuH873H65r5rt325UytR5429"
+	layout        = "01/02/2006 15:04:05"
+	userAgent     = "NugsNet/3.16.1.682 (Android; 7.1.2; Asus; ASUS_Z01QD)"
+	userAgentTwo  = "nugsnetAndroid"
+	authUrl       = "https://id.nugs.net/connect/token"
+	streamApiBase = "https://streamapi.nugs.net/"
+	subInfoUrl    = "https://subscriptions.nugs.net/api/v1/me/subscriptions"
+	userInfoUrl   = "https://id.nugs.net/connect/userinfo"
+	playerUrl     = "https://play.nugs.net/"
+	sanRegexStr   = `[\/:*?"><|]`
+)
 
 var (
 	jar, _ = cookiejar.New(nil)
 	client = &http.Client{Jar: jar}
 )
 
+var regexStrings = [4]string{
+	`^https://play.nugs.net/#/catalog/recording/(\d+)$`,
+	`^https://play.nugs.net/#/playlists/playlist/(\d+)$`,
+	`(^https://2nu.gs/[a-zA-Z\d]+$)`,
+	`^https://play.nugs.net/#/videos/artist/\d+/.+/(\d+)$`,
+}
+
+var qualityMap = map[string]Quality{
+	".alac16/": {Specs: "16-bit / 44.1 kHz ALAC", Extension: ".m4a", Format: 1},
+	".flac16/": {Specs: "16-bit / 44.1 kHz FLAC", Extension: ".flac", Format: 2},
+	".mqa24/":  {Specs: "24-bit / 48 kHz MQA", Extension: ".flac", Format: 3},
+	".s360/":   {Specs: "360 Reality Audio", Extension: ".mp4", Format: 4},
+	".aac150/": {Specs: "150 Kbps AAC", Extension: ".m4a", Format: 5},
+}
+
+var resolveRes = map[int]string{
+	1: "480",
+	2: "720",
+	3: "1080",
+	4: "1440",
+	5: "2160",
+}
+
+var trackFallback = map[int]int{
+	1: 2,
+	2: 5,
+	3: 2,
+	4: 3,
+}
+
+var resFallback = map[string]string{
+	"720":  "480",
+	"1080": "720",
+	"1440": "1080",
+}
+
 func (wc *WriteCounter) Write(p []byte) (int, error) {
+	var speed int64 = 0
 	n := len(p)
-	wc.Downloaded += uint64(n)
+	wc.Downloaded += int64(n)
 	percentage := float64(wc.Downloaded) / float64(wc.Total) * float64(100)
 	wc.Percentage = int(percentage)
-	fmt.Printf("\r%d%%, %s/%s ", wc.Percentage, humanize.Bytes(wc.Downloaded), wc.TotalStr)
+	toDivideBy := time.Now().UnixMilli() - wc.StartTime
+	if toDivideBy != 0 {
+		speed = int64(wc.Downloaded) / toDivideBy * 1000
+	}
+	fmt.Printf("\r%d%% @ %s/s, %s/%s ", wc.Percentage, humanize.Bytes(uint64(speed)),
+		humanize.Bytes(uint64(wc.Downloaded)), wc.TotalStr)
 	return n, nil
+}
+
+func handleErr(errText string, err error, _panic bool) {
+	errString := errText + "\n" + err.Error()
+	if _panic {
+		panic(errString)
+	}
+	fmt.Println(errString)
+}
+
+func wasRunFromSrc() bool {
+	buildPath := filepath.Join(os.TempDir(), "go-build")
+	return strings.HasPrefix(os.Args[0], buildPath)
 }
 
 func getScriptDir() (string, error) {
@@ -45,7 +117,8 @@ func getScriptDir() (string, error) {
 		err   error
 		fname string
 	)
-	if filepath.IsAbs(os.Args[0]) {
+	runFromSrc := wasRunFromSrc()
+	if runFromSrc {
 		_, fname, _, ok = runtime.Caller(0)
 		if !ok {
 			return "", errors.New("Failed to get script filename.")
@@ -56,20 +129,22 @@ func getScriptDir() (string, error) {
 			return "", err
 		}
 	}
-	scriptDir := filepath.Dir(fname)
-	return scriptDir, nil
+	return filepath.Dir(fname), nil
 }
 
 func readTxtFile(path string) ([]string, error) {
 	var lines []string
-	f, err := os.Open(path)
+	f, err := os.OpenFile(path, os.O_RDONLY, 0755)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
-		lines = append(lines, strings.TrimSpace(scanner.Text()))
+		line := strings.TrimSpace(scanner.Text())
+		if line != "" {
+			lines = append(lines, line)
+		}
 	}
 	if scanner.Err() != nil {
 		return nil, scanner.Err()
@@ -91,9 +166,9 @@ func processUrls(urls []string) ([]string, error) {
 		processed []string
 		txtPaths  []string
 	)
-	for _, url := range urls {
-		if strings.HasSuffix(url, ".txt") && !contains(txtPaths, url) {
-			txtLines, err := readTxtFile(url)
+	for _, _url := range urls {
+		if strings.HasSuffix(_url, ".txt") && !contains(txtPaths, _url) {
+			txtLines, err := readTxtFile(_url)
 			if err != nil {
 				return nil, err
 			}
@@ -102,10 +177,10 @@ func processUrls(urls []string) ([]string, error) {
 					processed = append(processed, txtLine)
 				}
 			}
-			txtPaths = append(txtPaths, url)
+			txtPaths = append(txtPaths, _url)
 		} else {
-			if !contains(processed, url) {
-				processed = append(processed, url)
+			if !contains(processed, _url) {
+				processed = append(processed, _url)
 			}
 		}
 	}
@@ -113,13 +188,6 @@ func processUrls(urls []string) ([]string, error) {
 }
 
 func parseCfg() (*Config, error) {
-	resolveFormat := map[int]int{
-		1: 2,
-		2: 3,
-		3: 5,
-		4: 8,
-		5: 10,
-	}
 	cfg, err := readConfig()
 	if err != nil {
 		return nil, err
@@ -128,10 +196,16 @@ func parseCfg() (*Config, error) {
 	if args.Format != -1 {
 		cfg.Format = args.Format
 	}
-	if !(cfg.Format >= 1 && cfg.Format <= 5) {
-		return nil, errors.New("Format must be between 1 and 5.")
+	if args.VideoFormat != -1 {
+		cfg.VideoFormat = args.VideoFormat
 	}
-	cfg.Format = resolveFormat[cfg.Format]
+	if !(cfg.Format >= 1 && cfg.Format <= 5) {
+		return nil, errors.New("Track Format must be between 1 and 5.")
+	}
+	if !(cfg.VideoFormat >= 1 && cfg.VideoFormat <= 5) {
+		return nil, errors.New("Video format must be between 1 and 5.")
+	}
+	cfg.WantRes = resolveRes[cfg.VideoFormat]
 	if args.OutPath != "" {
 		cfg.OutPath = args.OutPath
 	}
@@ -180,21 +254,18 @@ func fileExists(path string) (bool, error) {
 	return false, err
 }
 
-func sanitize(filename string) string {
-	regex := regexp.MustCompile(`[\/:*?"><|]`)
-	sanitized := regex.ReplaceAllString(filename, "_")
-	return sanitized
+func sanitise(filename string) string {
+	return regexp.MustCompile(sanRegexStr).ReplaceAllString(filename, "_")
 }
 
 func auth(email, pwd string) (string, error) {
-	const _url = "https://id.nugs.net/connect/token"
 	data := url.Values{}
-	data.Set("client_id", "Eg7HuH873H65r5rt325UytR5429")
+	data.Set("client_id", clientId)
 	data.Set("grant_type", "password")
 	data.Set("scope", "openid profile email nugsnet:api nugsnet:legacyapi offline_access")
 	data.Set("username", email)
 	data.Set("password", pwd)
-	req, err := http.NewRequest(http.MethodPost, _url, strings.NewReader(data.Encode()))
+	req, err := http.NewRequest(http.MethodPost, authUrl, strings.NewReader(data.Encode()))
 	if err != nil {
 		return "", err
 	}
@@ -217,8 +288,7 @@ func auth(email, pwd string) (string, error) {
 }
 
 func getUserInfo(token string) (string, error) {
-	const _url = "https://id.nugs.net/connect/userinfo"
-	req, err := http.NewRequest(http.MethodGet, _url, nil)
+	req, err := http.NewRequest(http.MethodGet, userInfoUrl, nil)
 	if err != nil {
 		return "", err
 	}
@@ -241,8 +311,7 @@ func getUserInfo(token string) (string, error) {
 }
 
 func getSubInfo(token string) (*SubInfo, error) {
-	const _url = "https://subscriptions.nugs.net/api/v1/me/subscriptions"
-	req, err := http.NewRequest(http.MethodGet, _url, nil)
+	req, err := http.NewRequest(http.MethodGet, subInfoUrl, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -273,7 +342,6 @@ func getPlan(subInfo *SubInfo) (string, bool) {
 }
 
 func parseTimestamps(start, end string) (string, string) {
-	const layout = "01/02/2006 15:04:05"
 	startTime, _ := time.Parse(layout, start)
 	endTime, _ := time.Parse(layout, end)
 	parsedStart := strconv.FormatInt(startTime.Unix(), 10)
@@ -298,19 +366,33 @@ func parseStreamParams(userId string, subInfo *SubInfo, isPromo bool) *StreamPar
 	return streamParams
 }
 
-func checkUrl(url string) string {
-	const regexString = `^https://play.nugs.net/#/catalog/recording/(\d+)$`
-	regex := regexp.MustCompile(regexString)
-	match := regex.FindStringSubmatch(url)
-	if match == nil {
-		return ""
+func checkUrl(url string) (string, int) {
+	for i, regexStr := range regexStrings {
+		regex := regexp.MustCompile(regexStr)
+		match := regex.FindStringSubmatch(url)
+		if match != nil {
+			return match[1], i
+		}
 	}
-	return match[1]
+	return "", 0
+}
+
+func extractLegToken(tokenStr string) (string, error) {
+	payload := strings.SplitN(tokenStr, ".", 3)[1]
+	decoded, err := base64.RawURLEncoding.DecodeString(payload)
+	if err != nil {
+		return "", err
+	}
+	var obj Payload
+	err = json.Unmarshal(decoded, &obj)
+	if err != nil {
+		return "", err
+	}
+	return obj.LegacyToken, nil
 }
 
 func getAlbumMeta(albumId string) (*AlbumMeta, error) {
-	const _url = "https://streamapi.nugs.net/api.aspx"
-	req, err := http.NewRequest(http.MethodGet, _url, nil)
+	req, err := http.NewRequest(http.MethodGet, streamApiBase+"api.aspx", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -336,23 +418,68 @@ func getAlbumMeta(albumId string) (*AlbumMeta, error) {
 	return &obj, nil
 }
 
-func getStreamMeta(trackId, format int, streamParams *StreamParams) (string, error) {
-	const _url = "https://streamapi.nugs.net/bigriver/subPlayer.aspx"
-	req, err := http.NewRequest(http.MethodGet, _url, nil)
+func getPlistMeta(plistId, email, legacyToken string, cat bool) (*PlistMeta, error) {
+	var path string
+	if cat {
+		path = "api.aspx"
+	} else {
+		path = "secureApi.aspx"
+	}
+	req, err := http.NewRequest(http.MethodGet, streamApiBase+path, nil)
+	if err != nil {
+		return nil, err
+	}
+	query := url.Values{}
+	if cat {
+		query.Set("method", "catalog.playlist")
+		query.Set("plGUID", plistId)
+	} else {
+		query.Set("method", "user.playlist")
+		query.Set("playlistID", plistId)
+		query.Set("developerKey", devKey)
+		query.Set("user", email)
+		query.Set("token", legacyToken)
+	}
+	req.URL.RawQuery = query.Encode()
+	req.Header.Add("User-Agent", userAgentTwo)
+	do, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer do.Body.Close()
+	if do.StatusCode != http.StatusOK {
+		return nil, errors.New(do.Status)
+	}
+	var obj PlistMeta
+	err = json.NewDecoder(do.Body).Decode(&obj)
+	if err != nil {
+		return nil, err
+	}
+	return &obj, nil
+}
+
+func getStreamMeta(trackId, skuId, format int, streamParams *StreamParams) (string, error) {
+	req, err := http.NewRequest(http.MethodGet, streamApiBase+"bigriver/subPlayer.aspx", nil)
 	if err != nil {
 		return "", err
 	}
 	query := url.Values{}
-	query.Set("trackID", strconv.Itoa(trackId))
+	if format == 0 {
+		query.Set("skuId", strconv.Itoa(skuId))
+		query.Set("containerID", strconv.Itoa(trackId))
+		query.Set("chap", "1")
+	} else {
+		query.Set("platformID", strconv.Itoa(format))
+		query.Set("trackID", strconv.Itoa(trackId))
+	}
 	query.Set("app", "1")
-	query.Set("platformID", strconv.Itoa(format))
 	query.Set("subscriptionID", streamParams.SubscriptionID)
 	query.Set("subCostplanIDAccessList", streamParams.SubCostplanIDAccessList)
 	query.Set("nn_userID", streamParams.UserID)
 	query.Set("startDateStamp", streamParams.StartStamp)
 	query.Set("endDateStamp", streamParams.EndStamp)
 	req.URL.RawQuery = query.Encode()
-	req.Header.Add("User-Agent", "nugsnetAndroid")
+	req.Header.Add("User-Agent", userAgentTwo)
 	do, err := client.Do(req)
 	if err != nil {
 		return "", err
@@ -370,15 +497,9 @@ func getStreamMeta(trackId, format int, streamParams *StreamParams) (string, err
 }
 
 func queryQuality(streamUrl string) *Quality {
-	qualityMap := map[string]Quality{
-		".alac16/": {Specs: "16-bit / 44.1 kHz ALAC", Extension: ".m4a"},
-		".flac16/": {Specs: "16-bit / 44.1 kHz FLAC", Extension: ".flac"},
-		".mqa24/":  {Specs: "24-bit / 48 kHz MQA", Extension: ".flac"},
-		".s360/":   {Specs: "360 Reality Audio", Extension: ".mp4"},
-		".aac150/": {Specs: "AAC 150", Extension: ".m4a"},
-	}
 	for k, v := range qualityMap {
 		if strings.Contains(streamUrl, k) {
+			v.URL = streamUrl
 			return &v
 		}
 	}
@@ -386,7 +507,7 @@ func queryQuality(streamUrl string) *Quality {
 }
 
 func downloadTrack(trackPath, url string) error {
-	f, err := os.Create(trackPath)
+	f, err := os.OpenFile(trackPath, os.O_CREATE|os.O_WRONLY, 0755)
 	if err != nil {
 		return err
 	}
@@ -395,7 +516,7 @@ func downloadTrack(trackPath, url string) error {
 	if err != nil {
 		return err
 	}
-	req.Header.Add("Referer", "https://play.nugs.net/")
+	req.Header.Add("Referer", playerUrl)
 	req.Header.Add("User-Agent", userAgent)
 	req.Header.Add("Range", "bytes=0-")
 	do, err := client.Do(req)
@@ -406,14 +527,397 @@ func downloadTrack(trackPath, url string) error {
 	if do.StatusCode != http.StatusOK && do.StatusCode != http.StatusPartialContent {
 		return errors.New(do.Status)
 	}
-	totalBytes := uint64(do.ContentLength)
-	counter := &WriteCounter{Total: totalBytes, TotalStr: humanize.Bytes(totalBytes)}
+	totalBytes := do.ContentLength
+	counter := &WriteCounter{
+		Total:     totalBytes,
+		TotalStr:  humanize.Bytes(uint64(totalBytes)),
+		StartTime: time.Now().UnixMilli(),
+	}
 	_, err = io.Copy(f, io.TeeReader(do.Body, counter))
 	fmt.Println("")
 	return err
 }
 
-func main() {
+func getTrackQual(quals []*Quality, wantFmt int) *Quality {
+	for _, quality := range quals {
+		if quality.Format == wantFmt {
+			return quality
+		}
+	}
+	return nil
+}
+
+func processTrack(folPath string, trackNum, trackTotal int, cfg *Config, track *Track, streamParams *StreamParams) error {
+	origWantFmt := cfg.Format
+	wantFmt := origWantFmt
+	var (
+		quals      []*Quality
+		chosenQual *Quality
+	)
+	// Call the stream meta endpoint four times to get all avail formats since the formats can shift.
+	// This will ensure the right format's always chosen.
+	for _, i := range [4]int{1, 4, 7, 10} {
+		streamUrl, err := getStreamMeta(track.TrackID, 0, i, streamParams)
+		if err != nil {
+			fmt.Println("Failed to get track stream metadata.")
+			return err
+		} else if streamUrl == "" {
+			return errors.New("The API didn't return a track stream URL.")
+		}
+		quality := queryQuality(streamUrl)
+		if quality == nil {
+			continue
+			//return errors.New("The API returned an unsupported format.")
+		}
+		quals = append(quals, quality)
+	}
+	for {
+		chosenQual = getTrackQual(quals, wantFmt)
+		if chosenQual != nil {
+			break
+		} else {
+			// Fallback quality.
+			wantFmt = trackFallback[wantFmt]
+		}
+	}
+	if chosenQual == nil {
+		return errors.New("No format was chosen.")
+	}
+	if wantFmt != origWantFmt {
+		fmt.Println("Unavilable in your chosen format.")
+	}
+	trackFname := fmt.Sprintf(
+		"%02d. %s%s", trackNum, sanitise(track.SongTitle), chosenQual.Extension,
+	)
+	trackPath := filepath.Join(folPath, trackFname)
+	exists, err := fileExists(trackPath)
+	if err != nil {
+		fmt.Println("Failed to check if track already exists locally.")
+		return err
+	}
+	if exists {
+		fmt.Println("Track already exists locally.")
+		return nil
+	}
+	fmt.Printf(
+		"Downloading track %d of %d: %s - %s\n", trackNum, trackTotal, track.SongTitle,
+		chosenQual.Specs,
+	)
+	err = downloadTrack(trackPath, chosenQual.URL)
+	if err != nil {
+		fmt.Println("Failed to download track.")
+		return err
+	}
+	return nil
+}
+
+func album(albumId string, cfg *Config, streamParams *StreamParams) error {
+	_meta, err := getAlbumMeta(albumId)
+	if err != nil {
+		fmt.Println("Failed to get album metadata.")
+		return err
+	}
+	meta := _meta.Response
+	albumFolder := meta.ArtistName + " - " + strings.TrimRight(meta.ContainerInfo, " ")
+	fmt.Println(albumFolder)
+	if len(albumFolder) > 120 {
+		albumFolder = albumFolder[:120]
+		fmt.Println("Album folder name was chopped as it exceeds 120 characters.")
+	}
+	albumPath := filepath.Join(cfg.OutPath, sanitise(albumFolder))
+	err = makeDirs(albumPath)
+	if err != nil {
+		fmt.Println("Failed to make album folder.")
+		return err
+	}
+	trackTotal := len(meta.Tracks)
+	for trackNum, track := range meta.Tracks {
+		trackNum++
+		err := processTrack(
+			albumPath, trackNum, trackTotal, cfg, &track, streamParams)
+		if err != nil {
+			handleErr("Track failed.", err, false)
+		}
+	}
+	return nil
+}
+
+func playlist(plistId, legacyToken string, cfg *Config, streamParams *StreamParams, cat bool) error {
+	_meta, err := getPlistMeta(plistId, cfg.Email, legacyToken, cat)
+	if err != nil {
+		fmt.Println("Failed to get playlist metadata.")
+		return err
+	}
+	meta := _meta.Response
+	plistName := meta.PlayListName
+	fmt.Println(plistName)
+	if len(plistName) > 120 {
+		plistName = plistName[:120]
+		fmt.Println("Playlist folder name was chopped as it exceeds 120 characters.")
+	}
+	plistPath := filepath.Join(cfg.OutPath, sanitise(plistName))
+	err = makeDirs(plistPath)
+	if err != nil {
+		fmt.Println("Failed to make playlist folder.")
+		return err
+	}
+	trackTotal := len(meta.Items)
+	for trackNum, track := range meta.Items {
+		trackNum++
+		err := processTrack(
+			plistPath, trackNum, trackTotal, cfg, &track.Track, streamParams)
+		if err != nil {
+			handleErr("Track failed.", err, false)
+		}
+	}
+	return nil
+}
+
+func getVideoSku(products []Product) int {
+	for _, product := range products {
+		if product.FormatStr == "VIDEO ON DEMAND" {
+			return product.SkuID
+		}
+	}
+	return 0
+}
+
+func getVidVariant(variants []*m3u8.Variant, wantRes string) *m3u8.Variant {
+	for _, variant := range variants {
+		if strings.HasSuffix(variant.Resolution, "x"+wantRes) {
+			return variant
+		}
+	}
+	return nil
+}
+
+func chooseVariant(manifestUrl, wantRes string) (*m3u8.Variant, string, error) {
+	origWantRes := wantRes
+	var wantVariant *m3u8.Variant
+	req, err := client.Get(manifestUrl)
+	if err != nil {
+		return nil, "", err
+	}
+	defer req.Body.Close()
+	if req.StatusCode != http.StatusOK {
+		return nil, "", errors.New(req.Status)
+	}
+	playlist, _, err := m3u8.DecodeFrom(req.Body, true)
+	if err != nil {
+		return nil, "", err
+	}
+	master := playlist.(*m3u8.MasterPlaylist)
+	sort.Slice(master.Variants, func(x, y int) bool {
+		return master.Variants[x].Bandwidth > master.Variants[y].Bandwidth
+	})
+	if wantRes == "2160" {
+		return master.Variants[0], "4K", nil
+	}
+	for {
+		wantVariant = getVidVariant(master.Variants, wantRes)
+		if wantVariant != nil {
+			break
+		} else {
+			// Fallback quality.
+			wantRes = resFallback[wantRes]
+		}
+	}
+	if wantVariant == nil {
+		return nil, "", errors.New("No variant was chosen.")
+	}
+	if wantRes != origWantRes {
+		fmt.Println("Unavilable in your chosen format.")
+	}
+	if wantRes == "2160" {
+		wantRes = "4K"
+	} else {
+		wantRes += "p"
+	}
+	return wantVariant, wantRes, nil
+}
+
+func getManifestBase(manifestUrl string) (string, string, error) {
+	u, err := url.Parse(manifestUrl)
+	if err != nil {
+		return "", "", err
+	}
+	path := u.Path
+	lastPathIdx := strings.LastIndex(path, "/")
+	base := u.Scheme + "://" + u.Host + path[:lastPathIdx+1]
+	return base, "?" + u.RawQuery, nil
+}
+
+func getSegUrl(manifestUrl string) (string, error) {
+	req, err := client.Get(manifestUrl)
+	if err != nil {
+		return "", err
+	}
+	defer req.Body.Close()
+	if req.StatusCode != http.StatusOK {
+		return "", errors.New(req.Status)
+	}
+	playlist, _, err := m3u8.DecodeFrom(req.Body, true)
+	if err != nil {
+		return "", err
+	}
+	media := playlist.(*m3u8.MediaPlaylist)
+	return media.Segments[0].URI, nil
+}
+
+func downloadVideo(videoPath, _url string) error {
+	f, err := os.OpenFile(videoPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0755)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	req, err := http.NewRequest(http.MethodGet, _url, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Add("Range", "bytes=0-")
+	do, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer do.Body.Close()
+	if do.StatusCode != http.StatusOK && do.StatusCode != http.StatusPartialContent {
+		return errors.New(do.Status)
+	}
+	totalBytes := do.ContentLength
+	counter := &WriteCounter{
+		Total:     totalBytes,
+		TotalStr:  humanize.Bytes(uint64(totalBytes)),
+		StartTime: time.Now().UnixMilli(),
+	}
+	_, err = io.Copy(f, io.TeeReader(do.Body, counter))
+	fmt.Println("")
+	return err
+}
+
+// There are native MPEG demuxers and MP4 muxers for Go, but they're too slow.
+func tsToMp4(VidPathTs, vidPath string) error {
+	var (
+		errBuffer bytes.Buffer
+		args      = []string{"-hide_banner", "-i", VidPathTs, "-c", "copy", vidPath}
+	)
+	cmd := exec.Command("ffmpeg", args...)
+	cmd.Stderr = &errBuffer
+	err := cmd.Run()
+	if err != nil {
+		errString := fmt.Sprintf("%s\n%s", err, errBuffer.String())
+		return errors.New(errString)
+	}
+	return nil
+}
+
+func video(videoId string, cfg *Config, streamParams *StreamParams) error {
+	_meta, err := getAlbumMeta(videoId)
+	if err != nil {
+		fmt.Println("Failed to get video metadata.")
+		return err
+	}
+	meta := _meta.Response
+	videoFname := meta.ArtistName + " - " + strings.TrimRight(meta.ContainerInfo, " ")
+	if len(videoFname) > 110 {
+		videoFname = videoFname[:110]
+		fmt.Println("Video filename was chopped as it exceeds 120 characters.")
+	}
+	fmt.Println(videoFname)
+	skuId := getVideoSku(meta.Products)
+	if skuId == 0 {
+		return errors.New("No video available.")
+	}
+	manifestUrl, err := getStreamMeta(
+		meta.ContainerID, skuId, 0, streamParams)
+	if err != nil {
+		fmt.Println("Failed to get video file metadata.")
+		return err
+	} else if manifestUrl == "" {
+		return errors.New("The API didn't return a video manifest URL.")
+	}
+	variant, retRes, err := chooseVariant(manifestUrl, cfg.WantRes)
+	if err != nil {
+		fmt.Println("Failed to get video master manifest.")
+		return err
+	}
+	vidPathNoExt := filepath.Join(cfg.OutPath, sanitise(videoFname+"_"+retRes))
+	VidPathTs := vidPathNoExt + ".ts"
+	vidPath := vidPathNoExt + ".mp4"
+	exists, err := fileExists(vidPath)
+	if err != nil {
+		fmt.Println("Failed to check if video already exists locally.")
+		return err
+	}
+	if exists {
+		fmt.Println("Video already exists locally.")
+		return nil
+	}
+	manBaseUrl, query, err := getManifestBase(manifestUrl)
+	if err != nil {
+		fmt.Println("Failed to get video manifest base URL.")
+		return err
+	}
+	segUrl, err := getSegUrl(manBaseUrl + variant.URI + query)
+	if err != nil {
+		fmt.Println("Failed to get video segment URLs.")
+		return err
+	}
+	fmt.Printf("%.3f FPS, %d Kbps, %s (%s)\n", variant.FrameRate,
+		variant.Bandwidth/1000, retRes, variant.Resolution)
+	err = downloadVideo(VidPathTs, manBaseUrl+segUrl+query)
+	if err != nil {
+		fmt.Println("Failed to download video segments.")
+		return err
+	}
+	fmt.Println("Putting into MP4 container...")
+	err = tsToMp4(VidPathTs, vidPath)
+	if err != nil {
+		fmt.Println("Failed to put ts into MP4 container.")
+		return err
+	}
+	err = os.Remove(VidPathTs)
+	if err != nil {
+		fmt.Println("Failed to delete ts.")
+	}
+	return nil
+}
+
+func resolveCatPlistId(plistUrl string) (string, error) {
+	req, err := client.Get(plistUrl)
+	if err != nil {
+		return "", err
+	}
+	req.Body.Close()
+	if req.StatusCode != http.StatusOK {
+		return "", errors.New(req.Status)
+	}
+	location := req.Request.URL.String()
+	u, err := url.Parse(location)
+	if err != nil {
+		return "", err
+	}
+	q, err := url.ParseQuery(u.RawQuery)
+	if err != nil {
+		return "", err
+	}
+	resolvedId := q.Get("plGUID")
+	if resolvedId == "" {
+		return "", errors.New("Not a catalog playlist.")
+	}
+	return resolvedId, nil
+}
+
+func catalogPlist(_plistId, legacyToken string, cfg *Config, streamParams *StreamParams) error {
+	plistId, err := resolveCatPlistId(_plistId)
+	if err != nil {
+		fmt.Println("Failed to resolve playlist ID.")
+		return err
+	}
+	err = playlist(plistId, legacyToken, cfg, streamParams, true)
+	return err
+}
+
+func init() {
 	fmt.Println(`
  _____                ____                _           _         
 |   | |_ _ ___ ___   |    \ ___ _ _ _ ___| |___ ___ _| |___ ___ 
@@ -421,6 +925,9 @@ func main() {
 |_|___|___|_  |___|  |____/|___|_____|_|_|_|___|__,|___|___|_|  
 	  |___|
 `)
+}
+
+func main() {
 	scriptDir, err := getScriptDir()
 	if err != nil {
 		panic(err)
@@ -431,31 +938,30 @@ func main() {
 	}
 	cfg, err := parseCfg()
 	if err != nil {
-		errString := fmt.Sprintf("Failed to parse config file.\n%s", err)
-		panic(errString)
+		handleErr("Failed to parse config/args.", err, true)
 	}
 	err = makeDirs(cfg.OutPath)
 	if err != nil {
-		errString := fmt.Sprintf("Failed to make output folder.\n%s", err)
-		panic(errString)
+		handleErr("Failed to make output folder.", err, true)
 	}
 	token, err := auth(cfg.Email, cfg.Password)
 	if err != nil {
-		errString := fmt.Sprintf("Failed to auth.\n%s", err)
-		panic(errString)
+		handleErr("Failed to auth.", err, true)
 	}
 	userId, err := getUserInfo(token)
 	if err != nil {
-		errString := fmt.Sprintf("Failed to fetch user info.\n%s", err)
-		panic(errString)
+		handleErr("Failed to get user info.", err, true)
 	}
 	subInfo, err := getSubInfo(token)
 	if err != nil {
-		errString := fmt.Sprintf("Failed to fetch subcription info.\n%s", err)
-		panic(errString)
+		handleErr("Failed to get subcription info.", err, true)
 	}
 	if !subInfo.IsContentAccessible {
 		panic("Account subscription required.")
+	}
+	legacyToken, err := extractLegToken(token)
+	if err != nil {
+		handleErr("Failed to extract legacy token.", err, true)
 	}
 	planDesc, isPromo := getPlan(subInfo)
 	fmt.Println(
@@ -463,67 +969,26 @@ func main() {
 	)
 	streamParams := parseStreamParams(userId, subInfo, isPromo)
 	albumTotal := len(cfg.Urls)
+	var itemErr error
 	for albumNum, url := range cfg.Urls {
-		fmt.Printf("Album %d of %d:\n", albumNum+1, albumTotal)
-		albumId := checkUrl(url)
-		if albumId == "" {
+		fmt.Printf("Item %d of %d:\n", albumNum+1, albumTotal)
+		itemId, mediaType := checkUrl(url)
+		if itemId == "" {
 			fmt.Println("Invalid URL:", url)
 			continue
 		}
-		meta, err := getAlbumMeta(albumId)
-		if err != nil {
-			fmt.Printf("Failed to fetch album metadata.\n%s", err)
-			continue
+		switch mediaType {
+		case 0:
+			itemErr = album(itemId, cfg, streamParams)
+		case 1:
+			itemErr = playlist(itemId, legacyToken, cfg, streamParams, false)
+		case 2:
+			itemErr = catalogPlist(itemId, legacyToken, cfg, streamParams)
+		case 3:
+			itemErr = video(itemId, cfg, streamParams)
 		}
-		albumFolder := meta.Response.ArtistName + " - " + strings.TrimRight(meta.Response.ContainerInfo, " ")
-		fmt.Println(albumFolder)
-		if len(albumFolder) > 120 {
-			albumFolder = albumFolder[:120]
-			fmt.Println("Album folder name was chopped as it exceeds 120 characters.")
-		}
-		albumPath := filepath.Join(cfg.OutPath, sanitize(albumFolder))
-		err = makeDirs(albumPath)
-		if err != nil {
-			fmt.Println("Failed to make album folder.\n", err)
-			continue
-		}
-		trackTotal := len(meta.Response.Tracks)
-		for trackNum, track := range meta.Response.Tracks {
-			trackNum++
-			streamUrl, err := getStreamMeta(track.TrackID, cfg.Format, streamParams)
-			if err != nil {
-				fmt.Printf("Failed to fetch track stream metadata.\n%s", err)
-				continue
-			} else if streamUrl == "" {
-				fmt.Println("The API didn't return a track stream URL.")
-				continue
-			}
-			quality := queryQuality(streamUrl)
-			if quality == nil {
-				fmt.Println("The API returned an unsupported format.")
-				continue
-			}
-			trackFname := fmt.Sprintf(
-				"%02d. %s%s", trackNum, sanitize(track.SongTitle), quality.Extension,
-			)
-			trackPath := filepath.Join(albumPath, trackFname)
-			exists, err := fileExists(trackPath)
-			if err != nil {
-				fmt.Printf("Failed to check if track already exists locally.\n%s", err)
-				continue
-			}
-			if exists {
-				fmt.Println("Track already exists locally.")
-				continue
-			}
-			fmt.Printf(
-				"Downloading track %d of %d: %s - %s\n", trackNum, trackTotal, track.SongTitle,
-				quality.Specs,
-			)
-			err = downloadTrack(trackPath, streamUrl)
-			if err != nil {
-				fmt.Printf("Failed to download track.\n%s", err)
-			}
+		if itemErr != nil {
+			handleErr("Item failed.", itemErr, false)
 		}
 	}
 }
