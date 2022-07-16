@@ -1,6 +1,7 @@
 # Nugs-Downloader
-Go port of my Nugs tool.
-![](https://i.imgur.com/62HwfYd.png)
+Nugs downloader written in Go.
+![](https://i.imgur.com/NOsQjnP.png)
+![](https://i.imgur.com/BEudufy.png)
 [Windows, Linux and macOS binaries](https://github.com/Sorrow446/Nugs-Downloader/releases)
 
 # Setup
