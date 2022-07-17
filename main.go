@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
@@ -29,17 +30,19 @@ import (
 )
 
 const (
-	devKey        = "x7f54tgbdyc64y656thy47er4"
-	clientId      = "Eg7HuH873H65r5rt325UytR5429"
-	layout        = "01/02/2006 15:04:05"
-	userAgent     = "NugsNet/3.16.1.682 (Android; 7.1.2; Asus; ASUS_Z01QD)"
-	userAgentTwo  = "nugsnetAndroid"
-	authUrl       = "https://id.nugs.net/connect/token"
-	streamApiBase = "https://streamapi.nugs.net/"
-	subInfoUrl    = "https://subscriptions.nugs.net/api/v1/me/subscriptions"
-	userInfoUrl   = "https://id.nugs.net/connect/userinfo"
-	playerUrl     = "https://play.nugs.net/"
-	sanRegexStr   = `[\/:*?"><|]`
+	devKey         = "x7f54tgbdyc64y656thy47er4"
+	clientId       = "Eg7HuH873H65r5rt325UytR5429"
+	layout         = "01/02/2006 15:04:05"
+	userAgent      = "NugsNet/3.16.1.682 (Android; 7.1.2; Asus; ASUS_Z01QD)"
+	userAgentTwo   = "nugsnetAndroid"
+	authUrl        = "https://id.nugs.net/connect/token"
+	streamApiBase  = "https://streamapi.nugs.net/"
+	subInfoUrl     = "https://subscriptions.nugs.net/api/v1/me/subscriptions"
+	userInfoUrl    = "https://id.nugs.net/connect/userinfo"
+	playerUrl      = "https://play.nugs.net/"
+	sanRegexStr    = `[\/:*?"><|]`
+	chapsFileFname = "chapters_nugs_dl_tmp.txt"
+	durRegex       = `Duration: ([\d:.]+)`
 )
 
 var (
@@ -794,12 +797,133 @@ func downloadVideo(videoPath, _url string) error {
 	return err
 }
 
+func extractDuration(errStr string) string {
+	regex := regexp.MustCompile(durRegex)
+	match := regex.FindStringSubmatch(errStr)
+	if match != nil {
+		return match[1]
+	}
+	return ""
+}
+
+func parseDuration(dur string) (int, error) {
+	dur = strings.Replace(dur, ":", "h", 1)
+	dur = strings.Replace(dur, ":", "m", 1)
+	dur = strings.Replace(dur, ".", "s", 1)
+	dur += "ms"
+	d, err := time.ParseDuration(dur)
+	if err != nil {
+		return 0, err
+	}
+	rounded := math.Round(d.Seconds())
+	return int(rounded), nil
+}
+
+// Horrible, but best way without ffprobe.
+// My native Go duration calculation's too slow. Is there a way without having to iterate over all the packets?
+func getDuration(tsPath string) (int, error) {
+	var errBuffer bytes.Buffer
+	args := []string{"-hide_banner", "-i", tsPath}
+	cmd := exec.Command("ffmpeg", args...)
+	cmd.Stderr = &errBuffer
+	// Return code's always 1 as we're not providing any output files.
+	err := cmd.Run()
+	if err.Error() != "exit status 1" {
+		return 0, err
+	}
+	errStr := errBuffer.String()
+	ok := strings.HasSuffix(
+		strings.TrimSpace(errStr), "At least one output file must be specified")
+	if !ok {
+		errString := fmt.Sprintf("%s\n%s", err, errStr)
+		return 0, errors.New(errString)
+	}
+	dur := extractDuration(errStr)
+	if dur == "" {
+		return 0, errors.New("No regex match.")
+	}
+	durSecs, err := parseDuration(dur)
+	if err != nil {
+		return 0, err
+	}
+	return durSecs, nil
+}
+
+func getNextChapStart(chapters []interface{}, idx int) float64 {
+	for i, chapter := range chapters {
+		if i == idx {
+			m := chapter.(map[string]interface{})
+			return m["chapterSeconds"].(float64)
+		}
+	}
+	return 0
+}
+
+func writeChapsFile(chapters []interface{}, dur int) error {
+	f, err := os.OpenFile(chapsFileFname, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0755)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = f.WriteString(";FFMETADATA1\n")
+	if err != nil {
+		return err
+	}
+	chaptersCount := len(chapters)
+	for i, chapter := range chapters {
+		i++
+		_, err := f.WriteString("\n[CHAPTER]\n")
+		if err != nil {
+			return err
+		}
+		_, err = f.WriteString("TIMEBASE=1/1\n")
+		if err != nil {
+			return err
+		}
+		// casting to struct won't work.
+		m := chapter.(map[string]interface{})
+		start := m["chapterSeconds"].(float64)
+		startLine := fmt.Sprintf("START=%d\n", int(math.Round(start)))
+		_, err = f.WriteString(startLine)
+		if err != nil {
+			return err
+		}
+		if i == chaptersCount {
+			endLine := fmt.Sprintf("END=%d\n", dur)
+			_, err = f.WriteString(endLine)
+			if err != nil {
+				return err
+			}
+		} else {
+			nextChapStart := getNextChapStart(chapters, i)
+			endLine := fmt.Sprintf("END=%d\n", int(math.Round(nextChapStart)-1))
+			_, err = f.WriteString(endLine)
+			if err != nil {
+				return err
+			}
+		}
+		_, err = f.WriteString("TITLE=" + m["chaptername"].(string) + "\n")
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // There are native MPEG demuxers and MP4 muxers for Go, but they're too slow.
-func tsToMp4(VidPathTs, vidPath string) error {
+func tsToMp4(VidPathTs, vidPath string, chapAvail bool) error {
 	var (
 		errBuffer bytes.Buffer
-		args      = []string{"-hide_banner", "-i", VidPathTs, "-c", "copy", vidPath}
+		args      []string
 	)
+	if chapAvail {
+		args = []string{
+			"-hide_banner", "-i", VidPathTs, "-f", "ffmetadata",
+			"-i", chapsFileFname, "-map_metadata", "1", "-c", "copy", vidPath,
+		}
+	} else {
+		args = []string{"-hide_banner", "-i", VidPathTs, "-c", "copy", vidPath}
+	}
 	cmd := exec.Command("ffmpeg", args...)
 	cmd.Stderr = &errBuffer
 	err := cmd.Run()
@@ -817,6 +941,7 @@ func video(videoId string, cfg *Config, streamParams *StreamParams) error {
 		return err
 	}
 	meta := _meta.Response
+	chapsAvail := !reflect.ValueOf(meta.VideoChapters).IsZero()
 	videoFname := meta.ArtistName + " - " + strings.TrimRight(meta.ContainerInfo, " ")
 	if len(videoFname) > 110 {
 		videoFname = videoFname[:110]
@@ -869,11 +994,29 @@ func video(videoId string, cfg *Config, streamParams *StreamParams) error {
 		fmt.Println("Failed to download video segments.")
 		return err
 	}
+	if chapsAvail {
+		dur, err := getDuration(VidPathTs)
+		if err != nil {
+			fmt.Println("Failed to get ts duration.")
+			return err
+		}
+		err = writeChapsFile(meta.VideoChapters, dur)
+		if err != nil {
+			fmt.Println("Failed to write chapters file.")
+			return err
+		}
+	}
 	fmt.Println("Putting into MP4 container...")
-	err = tsToMp4(VidPathTs, vidPath)
+	err = tsToMp4(VidPathTs, vidPath, chapsAvail)
 	if err != nil {
 		fmt.Println("Failed to put ts into MP4 container.")
 		return err
+	}
+	if chapsAvail {
+		err = os.Remove(chapsFileFname)
+		if err != nil {
+			fmt.Println("Failed to delete chapters file.")
+		}
 	}
 	err = os.Remove(VidPathTs)
 	if err != nil {

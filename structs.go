@@ -297,14 +297,14 @@ type AlbumMeta struct {
 			SkuCode         string `json:"skuCode"`
 			IsSubStreamOnly int    `json:"isSubStreamOnly"`
 		} `json:"productFormatList"`
-		ContainsPreviewVideo  int         `json:"containsPreviewVideo"`
-		ArtistID              int         `json:"artistID"`
-		ContainerCategoryID   int         `json:"containerCategoryID"`
-		ContainerCategoryName interface{} `json:"containerCategoryName"`
-		ContainerCode         string      `json:"containerCode"`
-		ContainerIDExt        interface{} `json:"containerIDExt"`
-		ExtImage              string      `json:"extImage"`
-		VideoChapters         interface{} `json:"videoChapters"`
+		ContainsPreviewVideo  int           `json:"containsPreviewVideo"`
+		ArtistID              int           `json:"artistID"`
+		ContainerCategoryID   int           `json:"containerCategoryID"`
+		ContainerCategoryName interface{}   `json:"containerCategoryName"`
+		ContainerCode         string        `json:"containerCode"`
+		ContainerIDExt        interface{}   `json:"containerIDExt"`
+		ExtImage              string        `json:"extImage"`
+		VideoChapters         []interface{} `json:"videoChapters"`
 	} `json:"Response"`
 }
 
