@@ -37,7 +37,7 @@ Download two albums:
 Download a single album and from two text files:   
 `nugs_dl_x64.exe https://play.nugs.net/#/catalog/recording/23329 G:\1.txt G:\2.txt`
 
-Download a catalog playlist and video:
+Download a user playlist and video:
 `nugs_dl_x64.exe https://play.nugs.net/#/playlists/playlist/1215400 https://play.nugs.net/#/videos/artist/1437/Bachman%20&%20Turner/container/26695`
 
 ```
