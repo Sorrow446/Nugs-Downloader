@@ -24,8 +24,8 @@ Termux `pkg install ffmpeg`
 |Type|URL example|
 | --- | --- |
 |Album|`https://play.nugs.net/#/catalog/recording/23329`
-|Catalog playlist|`https://play.nugs.net/#/playlists/playlist/1215400`
-|User playlist|`https://2nu.gs/3PmqXLW`
+|Catalog playlist|`https://2nu.gs/3PmqXLW`
+|User playlist|`https://play.nugs.net/#/playlists/playlist/1215400`
 |Video|`https://play.nugs.net/#/videos/artist/1437/Bachman%20&%20Turner/container/26695`
 
 # Usage
