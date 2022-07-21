@@ -50,11 +50,12 @@ var (
 	client = &http.Client{Jar: jar}
 )
 
-var regexStrings = [4]string{
+var regexStrings = [5]string{
 	`^https://play.nugs.net/#/catalog/recording/(\d+)$`,
 	`^https://play.nugs.net/#/playlists/playlist/(\d+)$`,
 	`(^https://2nu.gs/[a-zA-Z\d]+$)`,
 	`^https://play.nugs.net/#/videos/artist/\d+/.+/(\d+)$`,
+	`^https://play.nugs.net/#/artist/(\d+)(?:/latest|)$`,
 }
 
 var qualityMap = map[string]Quality{
@@ -461,6 +462,47 @@ func getPlistMeta(plistId, email, legacyToken string, cat bool) (*PlistMeta, err
 	return &obj, nil
 }
 
+func getArtistMeta(artistId string) ([]*ArtistMeta, error) {
+	var allArtistMeta []*ArtistMeta
+	offset := 1
+	query := url.Values{}
+	query.Set("method", "catalog.containersAll")
+	query.Set("artistList", artistId)
+	query.Set("availType", "1")
+	query.Set("limit", "100")
+	query.Set("vdisp", "1")
+	for {
+		req, err := http.NewRequest(http.MethodGet, streamApiBase+"api.aspx", nil)
+		if err != nil {
+			return nil, err
+		}
+		query.Set("startOffset", strconv.Itoa(offset))
+		req.URL.RawQuery = query.Encode()
+		req.Header.Add("User-Agent", userAgent)
+		do, err := client.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		if do.StatusCode != http.StatusOK {
+			do.Body.Close()
+			return nil, errors.New(do.Status)
+		}
+		var obj ArtistMeta
+		err = json.NewDecoder(do.Body).Decode(&obj)
+		do.Body.Close()
+		if err != nil {
+			return nil, err
+		}
+		retLen := len(obj.Response.Containers)
+		if retLen == 0 {
+			break
+		}
+		allArtistMeta = append(allArtistMeta, &obj)
+		offset += retLen
+	}
+	return allArtistMeta, nil
+}
+
 func getStreamMeta(trackId, skuId, format int, streamParams *StreamParams) (string, error) {
 	req, err := http.NewRequest(http.MethodGet, streamApiBase+"bigriver/subPlayer.aspx", nil)
 	if err != nil {
@@ -586,8 +628,8 @@ func processTrack(folPath string, trackNum, trackTotal int, cfg *Config, track *
 	if chosenQual == nil {
 		return errors.New("No format was chosen.")
 	}
-	if wantFmt != origWantFmt {
-		fmt.Println("Unavilable in your chosen format.")
+	if wantFmt != origWantFmt && origWantFmt != 4 {
+		fmt.Println("Unavailable in your chosen format.")
 	}
 	trackFname := fmt.Sprintf(
 		"%02d. %s%s", trackNum, sanitise(track.SongTitle), chosenQual.Extension,
@@ -614,13 +656,23 @@ func processTrack(folPath string, trackNum, trackTotal int, cfg *Config, track *
 	return nil
 }
 
-func album(albumId string, cfg *Config, streamParams *StreamParams) error {
-	_meta, err := getAlbumMeta(albumId)
-	if err != nil {
-		fmt.Println("Failed to get album metadata.")
-		return err
+func album(albumId string, cfg *Config, streamParams *StreamParams, artResp *AlbArtResp) error {
+	var (
+		meta   *AlbArtResp
+		tracks []Track
+	)
+	if albumId == "" {
+		meta = artResp
+		tracks = meta.Songs
+	} else {
+		_meta, err := getAlbumMeta(albumId)
+		if err != nil {
+			fmt.Println("Failed to get album metadata.")
+			return err
+		}
+		meta = &_meta.Response
+		tracks = meta.Tracks
 	}
-	meta := _meta.Response
 	albumFolder := meta.ArtistName + " - " + strings.TrimRight(meta.ContainerInfo, " ")
 	fmt.Println(albumFolder)
 	if len(albumFolder) > 120 {
@@ -628,18 +680,47 @@ func album(albumId string, cfg *Config, streamParams *StreamParams) error {
 		fmt.Println("Album folder name was chopped as it exceeds 120 characters.")
 	}
 	albumPath := filepath.Join(cfg.OutPath, sanitise(albumFolder))
-	err = makeDirs(albumPath)
+	err := makeDirs(albumPath)
 	if err != nil {
 		fmt.Println("Failed to make album folder.")
 		return err
 	}
-	trackTotal := len(meta.Tracks)
-	for trackNum, track := range meta.Tracks {
+	trackTotal := len(tracks)
+	for trackNum, track := range tracks {
 		trackNum++
 		err := processTrack(
 			albumPath, trackNum, trackTotal, cfg, &track, streamParams)
 		if err != nil {
 			handleErr("Track failed.", err, false)
+		}
+	}
+	return nil
+}
+
+func getAlbumTotal(meta []*ArtistMeta) int {
+	var total int
+	for _, _meta := range meta {
+		total += len(_meta.Response.Containers)
+	}
+	return total
+}
+
+func artist(artistId string, cfg *Config, streamParams *StreamParams) error {
+	meta, err := getArtistMeta(artistId)
+	if err != nil {
+		fmt.Println("Failed to get artist metadata.")
+		return err
+	}
+	fmt.Println(meta[0].Response.Containers[0].ArtistName)
+	albumTotal := getAlbumTotal(meta)
+	for _, _meta := range meta {
+
+		for albumNum, container := range _meta.Response.Containers {
+			fmt.Printf("Album %d of %d:\n", albumNum+1, albumTotal)
+			err := album("", cfg, streamParams, &container)
+			if err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -694,6 +775,14 @@ func getVidVariant(variants []*m3u8.Variant, wantRes string) *m3u8.Variant {
 	return nil
 }
 
+func formatRes(res string) string {
+	if res == "2160" {
+		return "4K"
+	} else {
+		return res + "p"
+	}
+}
+
 func chooseVariant(manifestUrl, wantRes string) (*m3u8.Variant, string, error) {
 	origWantRes := wantRes
 	var wantVariant *m3u8.Variant
@@ -714,28 +803,26 @@ func chooseVariant(manifestUrl, wantRes string) (*m3u8.Variant, string, error) {
 		return master.Variants[x].Bandwidth > master.Variants[y].Bandwidth
 	})
 	if wantRes == "2160" {
-		return master.Variants[0], "4K", nil
+		variant := master.Variants[0]
+		varRes := strings.SplitN(variant.Resolution, "x", 2)[1]
+		varRes = formatRes(varRes)
+		return variant, varRes, nil
 	}
 	for {
 		wantVariant = getVidVariant(master.Variants, wantRes)
 		if wantVariant != nil {
 			break
 		} else {
-			// Fallback quality.
 			wantRes = resFallback[wantRes]
 		}
 	}
 	if wantVariant == nil {
 		return nil, "", errors.New("No variant was chosen.")
 	}
-	if wantRes != origWantRes {
-		fmt.Println("Unavilable in your chosen format.")
+	if wantRes != origWantRes && origWantRes != "2160" {
+		fmt.Println("Unavailable in your chosen format.")
 	}
-	if wantRes == "2160" {
-		wantRes = "4K"
-	} else {
-		wantRes += "p"
-	}
+	wantRes = formatRes(wantRes)
 	return wantVariant, wantRes, nil
 }
 
@@ -1122,13 +1209,15 @@ func main() {
 		}
 		switch mediaType {
 		case 0:
-			itemErr = album(itemId, cfg, streamParams)
+			itemErr = album(itemId, cfg, streamParams, nil)
 		case 1:
 			itemErr = playlist(itemId, legacyToken, cfg, streamParams, false)
 		case 2:
 			itemErr = catalogPlist(itemId, legacyToken, cfg, streamParams)
 		case 3:
 			itemErr = video(itemId, cfg, streamParams)
+		case 4:
+			itemErr = artist(itemId, cfg, streamParams)
 		}
 		if itemErr != nil {
 			handleErr("Item failed.", itemErr, false)
