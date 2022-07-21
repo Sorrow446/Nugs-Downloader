@@ -819,7 +819,7 @@ func chooseVariant(manifestUrl, wantRes string) (*m3u8.Variant, string, error) {
 	if wantVariant == nil {
 		return nil, "", errors.New("No variant was chosen.")
 	}
-	if wantRes != origWantRes && origWantRes != "2160" {
+	if wantRes != origWantRes {
 		fmt.Println("Unavailable in your chosen format.")
 	}
 	wantRes = formatRes(wantRes)
