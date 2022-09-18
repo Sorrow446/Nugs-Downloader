@@ -14,6 +14,7 @@ Configure any other options if needed.
 |format|Track download quality. 1 = 16-bit / 44.1 kHz ALAC, 2 = 16-bit / 44.1 kHz FLAC, 3 = 24-bit / 48 kHz MQA, 4 = 360 Reality Audio / best available, 5 = 150 Kbps AAC.
 |videoFormat|Video download format. 1 = 480p, 2 = 720p, 3 = 1080p, 4 = 1440p, 5 = 4K / best available. **FFmpeg needed, see below.**
 |outPath|Where to download to. Path will be made if it doesn't already exist.
+|token|Token to auth with Apple and Google accounts ([how to get token](https://github.com/Sorrow446/Nugs-Downloader/blob/main/token.md)). Ignore if you're using a regular account.
 
 **FFmpeg is needed for ts -> MP4 losslessly for videos.**  
 [Windows (gpl)](https://github.com/BtbN/FFmpeg-Builds/releases)    
