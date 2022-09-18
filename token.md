@@ -2,6 +2,6 @@ You must use a token instead of an email and password if you auth via Apple or G
 
 - Start sniffer (I use Fiddler).
 - Open https://www.nugs.net/stream/music/ in browser.
-- Find api/v1/me/subscriptions call in fiddler.
+- Find api/v1/me/subscriptions call in Fiddler.
 
 ![](https://i.imgur.com/XsRKCzY.png)
