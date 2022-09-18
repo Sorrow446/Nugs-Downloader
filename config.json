@@ -3,5 +3,6 @@
     "password": "",
     "format": 4,
     "videoFormat": 5,
-    "outPath": "Nugs downloads"
+    "outPath": "Nugs downloads",
+    "token": ""
 }
