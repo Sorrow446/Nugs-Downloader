@@ -216,9 +216,6 @@ func parseCfg() (*Config, error) {
 	if cfg.OutPath == "" {
 		cfg.OutPath = "Nugs downloads"
 	}
-	if cfg.Token != "" {
-		cfg.Token = strings.TrimPrefix(cfg.Token, "Bearer ")
-	}
 	cfg.Urls, err = processUrls(args.Urls)
 	if err != nil {
 		errString := fmt.Sprintf("Failed to process URLs.\n%s", err)
@@ -1161,7 +1158,6 @@ func init() {
 }
 
 func main() {
-	var token string
 	scriptDir, err := getScriptDir()
 	if err != nil {
 		panic(err)
@@ -1178,13 +1174,9 @@ func main() {
 	if err != nil {
 		handleErr("Failed to make output folder.", err, true)
 	}
-	if cfg.Token == "" {
-		token, err = auth(cfg.Email, cfg.Password)
-		if err != nil {
-			handleErr("Failed to auth.", err, true)
-		}
-	} else {
-		token = cfg.Token
+	token, err := auth(cfg.Email, cfg.Password)
+	if err != nil {
+		handleErr("Failed to auth.", err, true)
 	}
 	userId, err := getUserInfo(token)
 	if err != nil {
