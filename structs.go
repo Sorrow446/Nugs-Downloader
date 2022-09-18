@@ -18,6 +18,7 @@ type Config struct {
 	OutPath     string
 	VideoFormat int
 	WantRes     string
+	Token       string
 }
 
 type Args struct {
