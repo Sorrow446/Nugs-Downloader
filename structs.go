@@ -11,14 +11,16 @@ type WriteCounter struct {
 }
 
 type Config struct {
-	Email       string
-	Password    string
-	Urls        []string
-	Format      int
-	OutPath     string
-	VideoFormat int
-	WantRes     string
-	Token       string
+	Email           string
+	Password        string
+	Urls            []string
+	Format          int
+	OutPath         string
+	VideoFormat     int
+	WantRes         string
+	Token           string
+	UseFfmpegEnvVar bool
+	FfmpegNameStr   string
 }
 
 type Args struct {
@@ -160,6 +162,34 @@ type Product struct {
 	IsSubStreamOnly int         `json:"isSubStreamOnly"`
 }
 
+type ProductFormatList struct {
+	PfType     int    `json:"pfType"`
+	FormatStr  string `json:"formatStr"`
+	SkuID      int    `json:"skuID"`
+	Cost       int    `json:"cost"`
+	CostplanID int    `json:"costplanID"`
+	PfTypeStr  string `json:"pfTypeStr"`
+	LiveEvent  struct {
+		EventID                      int         `json:"eventID"`
+		EventStartDateStr            interface{} `json:"eventStartDateStr"`
+		EventEndDateStr              interface{} `json:"eventEndDateStr"`
+		TimeZoneToDisplay            interface{} `json:"timeZoneToDisplay"`
+		OffsetFromLocalTimeToDisplay int         `json:"offsetFromLocalTimeToDisplay"`
+		UTCoffset                    int         `json:"UTCoffset"`
+		EventCode                    interface{} `json:"eventCode"`
+		LinkType                     int         `json:"linkType"`
+	} `json:"liveEvent"`
+	Salewindow struct {
+		SswID                        int         `json:"sswID"`
+		TimeZoneToDisplay            interface{} `json:"timeZoneToDisplay"`
+		OffsetFromLocalTimeToDisplay int         `json:"offsetFromLocalTimeToDisplay"`
+		SaleStartDateStr             interface{} `json:"saleStartDateStr"`
+		SaleEndDateStr               interface{} `json:"saleEndDateStr"`
+	} `json:"salewindow"`
+	SkuCode         string `json:"skuCode"`
+	IsSubStreamOnly int    `json:"isSubStreamOnly"`
+}
+
 type AlbArtResp struct {
 	NumReviews                int         `json:"numReviews"`
 	TotalContainerRunningTime int         `json:"totalContainerRunningTime"`
@@ -239,60 +269,34 @@ type AlbArtResp struct {
 		Caption string `json:"caption"`
 		URL     string `json:"url"`
 	} `json:"img"`
-	ContainerID                   int         `json:"containerID"`
-	ContainerInfo                 string      `json:"containerInfo"`
-	PerformanceDate               string      `json:"performanceDate"`
-	PerformanceDateFormatted      string      `json:"performanceDateFormatted"`
-	PerformanceDateYear           string      `json:"performanceDateYear"`
-	PerformanceDateShort          string      `json:"performanceDateShort"`
-	PerformanceDateShortYearFirst string      `json:"performanceDateShortYearFirst"`
-	PerformanceDateAbbr           string      `json:"performanceDateAbbr"`
-	SongList                      interface{} `json:"songList"`
-	ReleaseDate                   interface{} `json:"releaseDate"`
-	ReleaseDateFormatted          string      `json:"releaseDateFormatted"`
-	ActiveState                   string      `json:"activeState"`
-	ContainerType                 int         `json:"containerType"`
-	ContainerTypeStr              string      `json:"containerTypeStr"`
-	Songs                         []Track     `json:"songs"`
-	SalesLast30                   int         `json:"salesLast30"`
-	SalesAllTime                  int         `json:"salesAllTime"`
-	DateCreated                   string      `json:"dateCreated"`
-	EpochDateCreated              float64     `json:"epochDateCreated"`
-	ProductFormatList             []struct {
-		PfType     int    `json:"pfType"`
-		FormatStr  string `json:"formatStr"`
-		SkuID      int    `json:"skuID"`
-		Cost       int    `json:"cost"`
-		CostplanID int    `json:"costplanID"`
-		PfTypeStr  string `json:"pfTypeStr"`
-		LiveEvent  struct {
-			EventID                      int         `json:"eventID"`
-			EventStartDateStr            interface{} `json:"eventStartDateStr"`
-			EventEndDateStr              interface{} `json:"eventEndDateStr"`
-			TimeZoneToDisplay            interface{} `json:"timeZoneToDisplay"`
-			OffsetFromLocalTimeToDisplay int         `json:"offsetFromLocalTimeToDisplay"`
-			UTCoffset                    int         `json:"UTCoffset"`
-			EventCode                    interface{} `json:"eventCode"`
-			LinkType                     int         `json:"linkType"`
-		} `json:"liveEvent"`
-		Salewindow struct {
-			SswID                        int         `json:"sswID"`
-			TimeZoneToDisplay            interface{} `json:"timeZoneToDisplay"`
-			OffsetFromLocalTimeToDisplay int         `json:"offsetFromLocalTimeToDisplay"`
-			SaleStartDateStr             interface{} `json:"saleStartDateStr"`
-			SaleEndDateStr               interface{} `json:"saleEndDateStr"`
-		} `json:"salewindow"`
-		SkuCode         string `json:"skuCode"`
-		IsSubStreamOnly int    `json:"isSubStreamOnly"`
-	} `json:"productFormatList"`
-	ContainsPreviewVideo  int           `json:"containsPreviewVideo"`
-	ArtistID              int           `json:"artistID"`
-	ContainerCategoryID   int           `json:"containerCategoryID"`
-	ContainerCategoryName interface{}   `json:"containerCategoryName"`
-	ContainerCode         string        `json:"containerCode"`
-	ContainerIDExt        interface{}   `json:"containerIDExt"`
-	ExtImage              string        `json:"extImage"`
-	VideoChapters         []interface{} `json:"videoChapters"`
+	ContainerID                   int                  `json:"containerID"`
+	ContainerInfo                 string               `json:"containerInfo"`
+	PerformanceDate               string               `json:"performanceDate"`
+	PerformanceDateFormatted      string               `json:"performanceDateFormatted"`
+	PerformanceDateYear           string               `json:"performanceDateYear"`
+	PerformanceDateShort          string               `json:"performanceDateShort"`
+	PerformanceDateShortYearFirst string               `json:"performanceDateShortYearFirst"`
+	PerformanceDateAbbr           string               `json:"performanceDateAbbr"`
+	SongList                      interface{}          `json:"songList"`
+	ReleaseDate                   interface{}          `json:"releaseDate"`
+	ReleaseDateFormatted          string               `json:"releaseDateFormatted"`
+	ActiveState                   string               `json:"activeState"`
+	ContainerType                 int                  `json:"containerType"`
+	ContainerTypeStr              string               `json:"containerTypeStr"`
+	Songs                         []Track              `json:"songs"`
+	SalesLast30                   int                  `json:"salesLast30"`
+	SalesAllTime                  int                  `json:"salesAllTime"`
+	DateCreated                   string               `json:"dateCreated"`
+	EpochDateCreated              float64              `json:"epochDateCreated"`
+	ProductFormatList             []*ProductFormatList `json:"productFormatList"`
+	ContainsPreviewVideo          int                  `json:"containsPreviewVideo"`
+	ArtistID                      int                  `json:"artistID"`
+	ContainerCategoryID           int                  `json:"containerCategoryID"`
+	ContainerCategoryName         interface{}          `json:"containerCategoryName"`
+	ContainerCode                 string               `json:"containerCode"`
+	ContainerIDExt                interface{}          `json:"containerIDExt"`
+	ExtImage                      string               `json:"extImage"`
+	VideoChapters                 []interface{}        `json:"videoChapters"`
 }
 
 type AlbumMeta struct {
@@ -443,14 +447,31 @@ type ArtistMeta struct {
 	ResponseAvailabilityCode    int    `json:"responseAvailabilityCode"`
 	ResponseAvailabilityCodeStr string `json:"responseAvailabilityCodeStr"`
 	Response                    struct {
-		HeaderName          interface{}  `json:"headerName"`
-		Packages            interface{}  `json:"packages"`
-		Containers          []AlbArtResp `json:"containers"`
-		CategoryID          int          `json:"categoryID"`
-		ArtistID            int          `json:"artistID"`
-		ArtistName          interface{}  `json:"artistName"`
-		LoadingState        int          `json:"loadingState"`
-		TotalMatchedRecords int          `json:"totalMatchedRecords"`
-		NnCheckSum          int          `json:"nnCheckSum"`
+		HeaderName          interface{}   `json:"headerName"`
+		Packages            interface{}   `json:"packages"`
+		Containers          []*AlbArtResp `json:"containers"`
+		CategoryID          int           `json:"categoryID"`
+		ArtistID            int           `json:"artistID"`
+		ArtistName          interface{}   `json:"artistName"`
+		LoadingState        int           `json:"loadingState"`
+		TotalMatchedRecords int           `json:"totalMatchedRecords"`
+		NnCheckSum          int           `json:"nnCheckSum"`
 	} `json:"Response"`
 }
+
+// type LivestreamMeta struct {
+// 	MethodName                  string `json:"methodName"`
+// 	ResponseAvailabilityCode    int    `json:"responseAvailabilityCode"`
+// 	ResponseAvailabilityCodeStr string `json:"responseAvailabilityCodeStr"`
+// 	Response                    struct {
+// 		HeaderName          interface{}   `json:"headerName"`
+// 		Packages            interface{}   `json:"packages"`
+// 		Containers          []*AlbArtResp `json:"containers"`
+// 		CategoryID          int           `json:"categoryID"`
+// 		ArtistID            int           `json:"artistID"`
+// 		ArtistName          interface{}   `json:"artistName"`
+// 		LoadingState        int           `json:"loadingState"`
+// 		TotalMatchedRecords int           `json:"totalMatchedRecords"`
+// 		NnCheckSum          int           `json:"nnCheckSum"`
+// 	} `json:"Response"`
+// }
