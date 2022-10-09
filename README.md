@@ -15,6 +15,7 @@ Configure any other options if needed.
 |videoFormat|Video download format. 1 = 480p, 2 = 720p, 3 = 1080p, 4 = 1440p, 5 = 4K / best available. **FFmpeg needed, see below.**
 |outPath|Where to download to. Path will be made if it doesn't already exist.
 |token|Token to auth with Apple and Google accounts ([how to get token](https://github.com/Sorrow446/Nugs-Downloader/blob/main/token.md)). Ignore if you're using a regular account.
+|useFfmpegEnvVar|true = call FFmpeg from environment variable. false = call from script dir.
 
 **FFmpeg is needed for ts -> MP4 losslessly for videos.**  
 [Windows (gpl)](https://github.com/BtbN/FFmpeg-Builds/releases)    
@@ -27,6 +28,7 @@ Termux `pkg install ffmpeg`
 |Album|`https://play.nugs.net/#/catalog/recording/23329`
 |Artist|`https://play.nugs.net/#/artist/461/latest`, `https://play.nugs.net/#/artist/461`
 |Catalog playlist|`https://2nu.gs/3PmqXLW`
+|Exclusive Livestream|`https://play.nugs.net/#/exclusive-livestreams/container/30119`
 |User playlist|`https://play.nugs.net/#/playlists/playlist/1215400`
 |Video|`https://play.nugs.net/#/videos/artist/1045/Dead%20and%20Company/container/27323` Wrap in double quotes if using Windows.
 
