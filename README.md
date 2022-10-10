@@ -21,7 +21,7 @@ Configure any other options if needed.
 [Windows (gpl)](https://github.com/BtbN/FFmpeg-Builds/releases)    
 Linux: `sudo apt install ffmpeg`    
 Termux `pkg install ffmpeg`    
-If you don't have root, you can have Nugs Downloader look for the binary in the same dir with the `useFfmpegEnvVar` option.
+If you don't have root in Linux, you can have Nugs Downloader look for the binary in the same dir with the `useFfmpegEnvVar` option.
 
 ## Supported Media
 |Type|URL example|
