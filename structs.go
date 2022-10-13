@@ -458,20 +458,3 @@ type ArtistMeta struct {
 		NnCheckSum          int           `json:"nnCheckSum"`
 	} `json:"Response"`
 }
-
-// type LivestreamMeta struct {
-// 	MethodName                  string `json:"methodName"`
-// 	ResponseAvailabilityCode    int    `json:"responseAvailabilityCode"`
-// 	ResponseAvailabilityCodeStr string `json:"responseAvailabilityCodeStr"`
-// 	Response                    struct {
-// 		HeaderName          interface{}   `json:"headerName"`
-// 		Packages            interface{}   `json:"packages"`
-// 		Containers          []*AlbArtResp `json:"containers"`
-// 		CategoryID          int           `json:"categoryID"`
-// 		ArtistID            int           `json:"artistID"`
-// 		ArtistName          interface{}   `json:"artistName"`
-// 		LoadingState        int           `json:"loadingState"`
-// 		TotalMatchedRecords int           `json:"totalMatchedRecords"`
-// 		NnCheckSum          int           `json:"nnCheckSum"`
-// 	} `json:"Response"`
-// }

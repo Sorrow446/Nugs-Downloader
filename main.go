@@ -473,19 +473,15 @@ func getPlistMeta(plistId, email, legacyToken string, cat bool) (*PlistMeta, err
 	return &obj, nil
 }
 
-func getArtistMeta(artistId string, isLstream bool) ([]*ArtistMeta, error) {
+func getArtistMeta(artistId string) ([]*ArtistMeta, error) {
 	var allArtistMeta []*ArtistMeta
 	offset := 1
 	query := url.Values{}
 	query.Set("method", "catalog.containersAll")
 	query.Set("limit", "100")
-	if isLstream {
-		query.Set("videoReleaseType", "7")
-	} else {
-		query.Set("artistList", artistId)
-		query.Set("availType", "1")
-		query.Set("vdisp", "1")
-	}
+	query.Set("artistList", artistId)
+	query.Set("availType", "1")
+	query.Set("vdisp", "1")
 	for {
 		req, err := http.NewRequest(http.MethodGet, streamApiBase+"api.aspx", nil)
 		if err != nil {
@@ -725,7 +721,7 @@ func getAlbumTotal(meta []*ArtistMeta) int {
 }
 
 func artist(artistId string, cfg *Config, streamParams *StreamParams) error {
-	meta, err := getArtistMeta(artistId, false)
+	meta, err := getArtistMeta(artistId)
 	if err != nil {
 		fmt.Println("Failed to get artist albums metadata.")
 		return err
@@ -1121,25 +1117,8 @@ func parseLstreamMeta(_meta *ArtistMeta) *AlbumMeta {
 }
 
 func video(videoId string, cfg *Config, streamParams *StreamParams, isLstream bool) error {
-	var (
-		skuId  int
-		lsMeta []*ArtistMeta
-		_meta  *AlbumMeta
-		err    error
-	)
-	if isLstream {
-		lsMeta, err = getArtistMeta(videoId, true)
-		fmt.Println(err)
-		if err == nil {
-			if len(lsMeta) == 0 {
-				return errors.New(
-					"The API didn't return any artist livestreams metadata.")
-			}
-			_meta = parseLstreamMeta(lsMeta[0])
-		}
-	} else {
-		_meta, err = getAlbumMeta(videoId)
-	}
+	var skuId int
+	_meta, err := getAlbumMeta(videoId)
 	if err != nil {
 		fmt.Println("Failed to get videos metadata.")
 		return err
