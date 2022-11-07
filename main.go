@@ -50,13 +50,17 @@ var (
 	client = &http.Client{Jar: jar}
 )
 
-var regexStrings = [6]string{
+var regexStrings = [8]string{
 	`^https://play.nugs.net/#/catalog/recording/(\d+)$`,
 	`^https://play.nugs.net/#/playlists/playlist/(\d+)$`,
 	`(^https://2nu.gs/[a-zA-Z\d]+$)`,
 	`^https://play.nugs.net/#/videos/artist/\d+/.+/(\d+)$`,
 	`^https://play.nugs.net/#/artist/(\d+)(?:/albums|/latest|)$`,
 	`^https://play.nugs.net/#/exclusive-livestreams/container/(\d+)$`,
+	`^https://play.nugs.net/#/my-webcasts/\d+-(\d+)-\d+-\d+$`,
+	`^https://www.nugs.net/on/demandware.store/Sites-NugsNet-Site/d`+
+		`efault/Stash-QueueVideo\?([a-zA-Z0-9=%&-]+$)`,
+
 }
 
 var qualityMap = map[string]Quality{
@@ -1255,6 +1259,19 @@ func catalogPlist(_plistId, legacyToken string, cfg *Config, streamParams *Strea
 	return err
 }
 
+func paidLstream(query string, cfg *Config, streamParams *StreamParams) error {
+    q, err := url.ParseQuery(query)
+	if err != nil {
+		return err
+	}
+	showId := q["showID"][0]
+	if showId == "" {
+		return errors.New("URL didn't contain a show ID parameter.")
+	}
+	err = video(showId, cfg, streamParams, true)
+	return err
+}
+
 func init() {
 	fmt.Println(`
  _____                ____                _           _         
@@ -1331,8 +1348,10 @@ func main() {
 			itemErr = video(itemId, cfg, streamParams, false)
 		case 4:
 			itemErr = artist(itemId, cfg, streamParams)
-		case 5:
+		case 5, 6:
 			itemErr = video(itemId, cfg, streamParams, true)
+		case 7:
+			itemErr = paidLstream(itemId, cfg, streamParams)
 		}
 		if itemErr != nil {
 			handleErr("Item failed.", itemErr, false)
