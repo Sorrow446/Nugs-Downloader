@@ -17,7 +17,7 @@ Configure any other options if needed.
 |token|Token to auth with Apple and Google accounts ([how to get token](https://github.com/Sorrow446/Nugs-Downloader/blob/main/token.md)). Ignore if you're using a regular account.
 |useFfmpegEnvVar|true = call FFmpeg from environment variable, false = call from script dir.
 
-**FFmpeg is needed for ts -> MP4 losslessly for videos.**  
+**FFmpeg is needed for ts -> MP4 losslessly for videos & HLS-only tracks.**  
 [Windows (gpl)](https://github.com/BtbN/FFmpeg-Builds/releases)    
 Linux: `sudo apt install ffmpeg`    
 Termux `pkg install ffmpeg`    
