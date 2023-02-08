@@ -3,7 +3,10 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"crypto/aes"
+	"crypto/cipher"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -33,7 +36,7 @@ const (
 	devKey         = "x7f54tgbdyc64y656thy47er4"
 	clientId       = "Eg7HuH873H65r5rt325UytR5429"
 	layout         = "01/02/2006 15:04:05"
-	userAgent      = "NugsNet/3.19.2.688 (Android; 7.1.2; Asus; ASUS_Z01QD; Scale/2.0; en)"
+	userAgent      = "NugsNet/3.22.3.706 (Android; 7.1.2; Asus; ASUS_Z01QD; Scale/2.0; en)"
 	userAgentTwo   = "nugsnetAndroid"
 	authUrl        = "https://id.nugs.net/connect/token"
 	streamApiBase  = "https://streamapi.nugs.net/"
@@ -43,6 +46,7 @@ const (
 	sanRegexStr    = `[\/:*?"><|]`
 	chapsFileFname = "chapters_nugs_dl_tmp.txt"
 	durRegex       = `Duration: ([\d:.]+)`
+	bitrateRegex   = `[\w]+(?:_(\d+)k_v\d+)`
 )
 
 var (
@@ -69,6 +73,7 @@ var qualityMap = map[string]Quality{
 	".mqa24/":  {Specs: "24-bit / 48 kHz MQA", Extension: ".flac", Format: 3},
 	".s360/":   {Specs: "360 Reality Audio", Extension: ".mp4", Format: 4},
 	".aac150/": {Specs: "150 Kbps AAC", Extension: ".m4a", Format: 5},
+	".m3u8?":	{Extension: ".m4a", Format: 6},
 }
 
 var resolveRes = map[int]string{
@@ -607,22 +612,196 @@ func getTrackQual(quals []*Quality, wantFmt int) *Quality {
 	return nil
 }
 
+func extractBitrate(manUrl string) string {
+	regex := regexp.MustCompile(bitrateRegex)
+	match := regex.FindStringSubmatch(manUrl)
+	if match != nil {
+		return match[1]
+	}
+	return ""
+}
+
+func parseHlsMaster(qual *Quality) error {
+	req, err := client.Get(qual.URL)
+	if err != nil {
+		return err
+	}
+	defer req.Body.Close()
+	if req.StatusCode != http.StatusOK {
+		return errors.New(req.Status)
+	}
+	playlist, _, err := m3u8.DecodeFrom(req.Body, true)
+	if err != nil {
+		return err
+	}
+	master := playlist.(*m3u8.MasterPlaylist)
+	sort.Slice(master.Variants, func(x, y int) bool {
+		return master.Variants[x].Bandwidth > master.Variants[y].Bandwidth
+	})
+	variantUri := master.Variants[0].URI
+	bitrate := extractBitrate(variantUri)
+	if bitrate == "" {
+		return errors.New("no regex match for manifest bitrate")
+	}
+	qual.Specs = bitrate + " Kbps AAC"
+	manBase, q, err := getManifestBase(qual.URL)
+	if err != nil {
+		return err
+	}
+	qual.URL = manBase + variantUri + q
+	return nil
+}
+func getKey(keyUrl string) ([]byte, error) {
+	req, err := client.Get(keyUrl)
+	if err != nil {
+		return nil, err
+	}
+	defer req.Body.Close()
+	if req.StatusCode != http.StatusOK {
+		return nil, errors.New(req.Status)
+	}
+	buf := make([]byte, 16)
+	_, err = io.ReadFull(req.Body, buf)
+	if err != nil {
+		return nil, err
+	}
+	return buf, nil
+}
+
+// func decryptTrack(key, iv []byte, inPath, outPath string) error {
+// 	var stream cipher.Stream
+// 	fmt.Println("Decrypting...")
+// 	in_f, err := os.Open(inPath)
+// 	if err != nil {
+// 		return err
+// 	}
+
+// 	block, err := aes.NewCipher([]byte(key))
+// 	if err != nil {
+// 		in_f.Close()
+// 		return err
+// 	}
+// 	stream = cipher.NewCTR(block, []byte(iv))
+// 	reader := &cipher.StreamReader{S: stream, R: in_f}
+// 	out_f, err := os.Create(outPath)
+// 	if err != nil {
+// 		in_f.Close()
+// 		return err
+// 	}
+// 	defer out_f.Close()
+// 	_, err = io.Copy(out_f, reader)
+// 	if err != nil {
+// 		in_f.Close()
+// 		return err
+// 	}
+// 	in_f.Close()
+// 	err = os.Remove(inPath)
+// 	if err != nil {
+// 		fmt.Println("Failed to delete encrypted track.")
+// 	}
+// 	return nil
+// }
+
+func pkcs5Trimming(data []byte) []byte {
+	padding := data[len(data)-1]
+	return data[:len(data)-int(padding)]
+}
+
+func decryptTrack(key, iv []byte) ([]byte, error) {
+	encData, err := os.ReadFile("temp_enc.ts")
+	if err != nil {
+		return nil, err
+	}
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+	ecb := cipher.NewCBCDecrypter(block, iv)
+	decrypted := make([]byte, len(encData))
+	fmt.Println("Decrypting...")
+	ecb.CryptBlocks(decrypted, encData)
+	return decrypted, nil
+}
+
+func tsToAac(decData []byte, outPath, ffmpegNameStr string) error {
+	var errBuffer bytes.Buffer
+	cmd := exec.Command(ffmpegNameStr, "-i", "pipe:", "-c:a", "copy", outPath)
+	cmd.Stdin = bytes.NewReader(decData)
+	cmd.Stderr = &errBuffer
+	err := cmd.Run()
+	if err != nil {
+		errString := fmt.Sprintf("%s\n%s", err, errBuffer.String())
+		return errors.New(errString)
+	}
+	return nil
+}
+
+
+func hlsOnly(trackPath, manUrl, ffmpegNameStr string) error {
+	req, err := client.Get(manUrl)
+	if err != nil {
+		return err
+	}
+	defer req.Body.Close()
+	if req.StatusCode != http.StatusOK {
+		return errors.New(req.Status)
+	}
+	playlist, _, err := m3u8.DecodeFrom(req.Body, true)
+	if err != nil {
+		return err
+	}
+	media := playlist.(*m3u8.MediaPlaylist)
+
+	manBase, q, err := getManifestBase(manUrl)
+	if err != nil {
+		return err
+	}
+	tsUrl := manBase + media.Segments[0].URI + q
+
+	key := media.Key
+	keyBytes, err := getKey(manBase + key.URI)
+	if err != nil {
+		return err
+	}
+
+	iv, err := hex.DecodeString(key.IV[2:])
+	if err != nil {
+		return err
+	}
+
+	err = downloadTrack("temp_enc.ts", tsUrl)
+	if err != nil {
+		return err
+	}
+	decData, err := decryptTrack(keyBytes, iv)
+	if err != nil {
+		return err
+	}
+	err = os.Remove("temp_enc.ts")
+	if err != nil {
+		return err
+	}
+	err = tsToAac(decData, trackPath, ffmpegNameStr)
+	return err
+}
+
 func processTrack(folPath string, trackNum, trackTotal int, cfg *Config, track *Track, streamParams *StreamParams) error {
 	origWantFmt := cfg.Format
 	wantFmt := origWantFmt
 	var (
 		quals      []*Quality
 		chosenQual *Quality
+		isHlsOnly bool
 	)
 	// Call the stream meta endpoint four times to get all avail formats since the formats can shift.
 	// This will ensure the right format's always chosen.
 	for _, i := range [4]int{1, 4, 7, 10} {
 		streamUrl, err := getStreamMeta(track.TrackID, 0, i, streamParams)
 		if err != nil {
-			fmt.Println("Failed to get track stream metadata.")
+			fmt.Println("failed to get track stream metadata")
 			return err
 		} else if streamUrl == "" {
-			return errors.New("The API didn't return a track stream URL.")
+			return errors.New("the API didn't return a track stream URL")
 		}
 		quality := queryQuality(streamUrl)
 		if quality == nil {
@@ -630,24 +809,35 @@ func processTrack(folPath string, trackNum, trackTotal int, cfg *Config, track *
 			//return errors.New("The API returned an unsupported format.")
 		}
 		quals = append(quals, quality)
-	}
-	if len(quals) == 0 {
-		return errors.New("HLS-only tracks are not supported yet.")
-	}
-	for {
-		chosenQual = getTrackQual(quals, wantFmt)
-		if chosenQual != nil {
+		if quality.Format == 6 {
+			isHlsOnly = true
 			break
-		} else {
-			// Fallback quality.
-			wantFmt = trackFallback[wantFmt]
 		}
 	}
-	if chosenQual == nil {
-		return errors.New("No track format was chosen.")
-	}
-	if wantFmt != origWantFmt && origWantFmt != 4 {
-		fmt.Println("Unavailable in your chosen format.")
+
+	if isHlsOnly {
+		fmt.Println("HLS-only track. Only AAC is available, tags currently unsupported.")
+		chosenQual = quals[0]
+		err := parseHlsMaster(chosenQual)
+		if err != nil {
+			return err
+		}
+	} else {
+		for {
+			chosenQual = getTrackQual(quals, wantFmt)
+			if chosenQual != nil {
+				break
+			} else {
+				// Fallback quality.
+				wantFmt = trackFallback[wantFmt]
+			}
+		}
+		if chosenQual == nil {
+			return errors.New("no track format was chosen")
+		}
+		if wantFmt != origWantFmt && origWantFmt != 4 {
+			fmt.Println("Unavailable in your chosen format.")
+		}
 	}
 	trackFname := fmt.Sprintf(
 		"%02d. %s%s", trackNum, sanitise(track.SongTitle), chosenQual.Extension,
@@ -666,7 +856,11 @@ func processTrack(folPath string, trackNum, trackTotal int, cfg *Config, track *
 		"Downloading track %d of %d: %s - %s\n", trackNum, trackTotal, track.SongTitle,
 		chosenQual.Specs,
 	)
-	err = downloadTrack(trackPath, chosenQual.URL)
+	if isHlsOnly {
+		err = hlsOnly(trackPath, chosenQual.URL, cfg.FfmpegNameStr)
+	} else {
+		err = downloadTrack(trackPath, chosenQual.URL)
+	}
 	if err != nil {
 		fmt.Println("Failed to download track.")
 		return err
