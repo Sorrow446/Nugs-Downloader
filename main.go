@@ -630,6 +630,7 @@ func parseHlsMaster(qual *Quality) error {
 	if req.StatusCode != http.StatusOK {
 		return errors.New(req.Status)
 	}
+
 	playlist, _, err := m3u8.DecodeFrom(req.Body, true)
 	if err != nil {
 		return err
@@ -785,13 +786,16 @@ func hlsOnly(trackPath, manUrl, ffmpegNameStr string) error {
 	return err
 }
 
+func checkIfHlsOnly(quals []*Quality) bool {
+	return len(quals) == 1 && strings.Contains(quals[0].URL, ".m3u8?")
+}
+
 func processTrack(folPath string, trackNum, trackTotal int, cfg *Config, track *Track, streamParams *StreamParams) error {
 	origWantFmt := cfg.Format
 	wantFmt := origWantFmt
 	var (
 		quals      []*Quality
 		chosenQual *Quality
-		isHlsOnly bool
 	)
 	// Call the stream meta endpoint four times to get all avail formats since the formats can shift.
 	// This will ensure the right format's always chosen.
@@ -809,11 +813,13 @@ func processTrack(folPath string, trackNum, trackTotal int, cfg *Config, track *
 			//return errors.New("The API returned an unsupported format.")
 		}
 		quals = append(quals, quality)
-		if quality.Format == 6 {
-			isHlsOnly = true
-			break
-		}
+		// if quality.Format == 6 {
+		// 	isHlsOnly = true
+		// 	break
+		// }
 	}
+
+	isHlsOnly := checkIfHlsOnly(quals)
 
 	if isHlsOnly {
 		fmt.Println("HLS-only track. Only AAC is available, tags currently unsupported.")
