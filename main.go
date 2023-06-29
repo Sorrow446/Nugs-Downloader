@@ -70,9 +70,11 @@ var regexStrings = [8]string{
 var qualityMap = map[string]Quality{
 	".alac16/": {Specs: "16-bit / 44.1 kHz ALAC", Extension: ".m4a", Format: 1},
 	".flac16/": {Specs: "16-bit / 44.1 kHz FLAC", Extension: ".flac", Format: 2},
+	".flac?": {Specs: "FLAC", Extension: ".flac", Format: 2},
 	".mqa24/":  {Specs: "24-bit / 48 kHz MQA", Extension: ".flac", Format: 3},
 	".s360/":   {Specs: "360 Reality Audio", Extension: ".mp4", Format: 4},
 	".aac150/": {Specs: "150 Kbps AAC", Extension: ".m4a", Format: 5},
+	".m4a?": {Specs: "AAC", Extension: ".m4a", Format: 5},
 	".m3u8?":	{Extension: ".m4a", Format: 6},
 }
 
@@ -135,7 +137,7 @@ func getScriptDir() (string, error) {
 	if runFromSrc {
 		_, fname, _, ok = runtime.Caller(0)
 		if !ok {
-			return "", errors.New("Failed to get script filename.")
+			return "", errors.New("failed to get script filename")
 		}
 	} else {
 		fname, err = os.Executable()
@@ -216,10 +218,10 @@ func parseCfg() (*Config, error) {
 		cfg.VideoFormat = args.VideoFormat
 	}
 	if !(cfg.Format >= 1 && cfg.Format <= 5) {
-		return nil, errors.New("Track Format must be between 1 and 5.")
+		return nil, errors.New("track Format must be between 1 and 5")
 	}
 	if !(cfg.VideoFormat >= 1 && cfg.VideoFormat <= 5) {
-		return nil, errors.New("Video format must be between 1 and 5.")
+		return nil, errors.New("video format must be between 1 and 5")
 	}
 	cfg.WantRes = resolveRes[cfg.VideoFormat]
 	if args.OutPath != "" {
@@ -810,10 +812,11 @@ func processTrack(folPath string, trackNum, trackTotal int, cfg *Config, track *
 			fmt.Println("failed to get track stream metadata")
 			return err
 		} else if streamUrl == "" {
-			return errors.New("the API didn't return a track stream URL")
+			return errors.New("the api didn't return a track stream URL")
 		}
 		quality := queryQuality(streamUrl)
 		if quality == nil {
+			fmt.Println("The API returned an unsupported format, URL:", streamUrl)
 			continue
 			//return errors.New("The API returned an unsupported format.")
 		}
@@ -822,6 +825,10 @@ func processTrack(folPath string, trackNum, trackTotal int, cfg *Config, track *
 		// 	isHlsOnly = true
 		// 	break
 		// }
+	}
+
+	if len(quals) == 0 {
+		return errors.New("the api didn't return any formats")
 	}
 
 	isHlsOnly := checkIfHlsOnly(quals)
@@ -1347,7 +1354,7 @@ func video(videoId string, cfg *Config, streamParams *StreamParams, isLstream bo
 		skuId = getVideoSku(meta.Products)
 	}
 	if skuId == 0 {
-		return errors.New("No video available.")
+		return errors.New("no video available")
 	}
 	manifestUrl, err := getStreamMeta(
 		meta.ContainerID, skuId, 0, streamParams)
@@ -1355,7 +1362,7 @@ func video(videoId string, cfg *Config, streamParams *StreamParams, isLstream bo
 		fmt.Println("Failed to get video file metadata.")
 		return err
 	} else if manifestUrl == "" {
-		return errors.New("The API didn't return a video manifest URL.")
+		return errors.New("the api didn't return a video manifest url")
 	}
 	variant, retRes, err := chooseVariant(manifestUrl, cfg.WantRes)
 	if err != nil {
@@ -1449,7 +1456,7 @@ func resolveCatPlistId(plistUrl string) (string, error) {
 	}
 	resolvedId := q.Get("plGUID")
 	if resolvedId == "" {
-		return "", errors.New("Not a catalog playlist.")
+		return "", errors.New("not a catalog playlist")
 	}
 	return resolvedId, nil
 }
@@ -1471,7 +1478,7 @@ func paidLstream(query string, cfg *Config, streamParams *StreamParams) error {
 	}
 	showId := q["showID"][0]
 	if showId == "" {
-		return errors.New("URL didn't contain a show ID parameter.")
+		return errors.New("url didn't contain a show id parameter")
 	}
 	err = video(showId, cfg, streamParams, true)
 	return err
