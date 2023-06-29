@@ -787,7 +787,12 @@ func hlsOnly(trackPath, manUrl, ffmpegNameStr string) error {
 }
 
 func checkIfHlsOnly(quals []*Quality) bool {
-	return len(quals) == 1 && strings.Contains(quals[0].URL, ".m3u8?")
+	for _, quality := range quals {
+		if !strings.Contains(quality.URL, ".m3u8?") {
+			return false
+		}
+	}
+	return true
 }
 
 func processTrack(folPath string, trackNum, trackTotal int, cfg *Config, track *Track, streamParams *StreamParams) error {
