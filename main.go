@@ -70,8 +70,9 @@ var regexStrings = [8]string{
 var qualityMap = map[string]Quality{
 	".alac16/": {Specs: "16-bit / 44.1 kHz ALAC", Extension: ".m4a", Format: 1},
 	".flac16/": {Specs: "16-bit / 44.1 kHz FLAC", Extension: ".flac", Format: 2},
-	".flac?": {Specs: "FLAC", Extension: ".flac", Format: 2},
+	// .mqa24/ must be above .flac?
 	".mqa24/":  {Specs: "24-bit / 48 kHz MQA", Extension: ".flac", Format: 3},
+	".flac?": {Specs: "FLAC", Extension: ".flac", Format: 2},
 	".s360/":   {Specs: "360 Reality Audio", Extension: ".mp4", Format: 4},
 	".aac150/": {Specs: "150 Kbps AAC", Extension: ".m4a", Format: 5},
 	".m4a?": {Specs: "AAC", Extension: ".m4a", Format: 5},
