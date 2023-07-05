@@ -458,3 +458,8 @@ type ArtistMeta struct {
 		NnCheckSum          int           `json:"nnCheckSum"`
 	} `json:"Response"`
 }
+
+type PurchasedManResp struct {
+	FileURL      string `json:"fileURL"`
+	ResponseCode int    `json:"responseCode"`
+}

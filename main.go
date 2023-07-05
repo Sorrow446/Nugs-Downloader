@@ -36,7 +36,7 @@ const (
 	devKey         = "x7f54tgbdyc64y656thy47er4"
 	clientId       = "Eg7HuH873H65r5rt325UytR5429"
 	layout         = "01/02/2006 15:04:05"
-	userAgent      = "NugsNet/3.22.3.706 (Android; 7.1.2; Asus; ASUS_Z01QD; Scale/2.0; en)"
+	userAgent      = "NugsNet/3.26.724 (Android; 7.1.2; Asus; ASUS_Z01QD; Scale/2.0; en)"
 	userAgentTwo   = "nugsnetAndroid"
 	authUrl        = "https://id.nugs.net/connect/token"
 	streamApiBase  = "https://streamapi.nugs.net/"
@@ -404,18 +404,18 @@ func checkUrl(_url string) (string, int) {
 	return "", 0
 }
 
-func extractLegToken(tokenStr string) (string, error) {
+func extractLegToken(tokenStr string) (string, string, error) {
 	payload := strings.SplitN(tokenStr, ".", 3)[1]
 	decoded, err := base64.RawURLEncoding.DecodeString(payload)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	var obj Payload
 	err = json.Unmarshal(decoded, &obj)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	return obj.LegacyToken, nil
+	return obj.LegacyToken, obj.LegacyUguid, nil
 }
 
 func getAlbumMeta(albumId string) (*AlbumMeta, error) {
@@ -524,6 +524,35 @@ func getArtistMeta(artistId string) ([]*ArtistMeta, error) {
 		offset += retLen
 	}
 	return allArtistMeta, nil
+}
+
+func getPurchasedManUrl(skuID int, showID, userID, uguID string) (string, error) {
+	req, err := http.NewRequest(http.MethodGet, streamApiBase+"bigriver/vidPlayer.aspx", nil)
+	if err != nil {
+		return "", err
+	}
+	query := url.Values{}
+	query.Set("skuId", strconv.Itoa(skuID))
+	query.Set("showId", showID)
+	query.Set("uguid", uguID)
+	query.Set("nn_userID", userID)
+	query.Set("app", "1")
+	req.URL.RawQuery = query.Encode()
+	req.Header.Add("User-Agent", userAgentTwo)
+	do, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer do.Body.Close()
+	if do.StatusCode != http.StatusOK {
+		return "", errors.New(do.Status)
+	}
+	var obj PurchasedManResp
+	err = json.NewDecoder(do.Body).Decode(&obj)
+	if err != nil {
+		return "", err
+	}
+	return obj.FileURL, nil
 }
 
 func getStreamMeta(trackId, skuId, format int, streamParams *StreamParams) (string, error) {
@@ -1333,9 +1362,12 @@ func parseLstreamMeta(_meta *ArtistMeta) *AlbumMeta {
 	return parsed
 }
 
-func video(videoId string, cfg *Config, streamParams *StreamParams, isLstream bool) error {
-	var skuId int
-	_meta, err := getAlbumMeta(videoId)
+func video(videoID, uguID string, cfg *Config, streamParams *StreamParams, isLstream bool) error {
+	var (
+		skuID int
+		manifestUrl string
+	)
+	_meta, err := getAlbumMeta(videoID)
 	if err != nil {
 		fmt.Println("Failed to get videos metadata.")
 		return err
@@ -1348,17 +1380,21 @@ func video(videoId string, cfg *Config, streamParams *StreamParams, isLstream bo
 		fmt.Println(
 			"Video filename was chopped because it exceeds 120 characters.")
 	}
-	fmt.Println(videoFname)
 	if isLstream {
-		skuId = getLstreamSku(meta.ProductFormatList)
+		skuID = getLstreamSku(meta.ProductFormatList)
 	} else {
-		skuId = getVideoSku(meta.Products)
+		skuID = getVideoSku(meta.Products)
 	}
-	if skuId == 0 {
+	if skuID == 0 {
 		return errors.New("no video available")
 	}
-	manifestUrl, err := getStreamMeta(
-		meta.ContainerID, skuId, 0, streamParams)
+	if uguID == "" {
+		manifestUrl, err = getStreamMeta(
+			meta.ContainerID, skuID, 0, streamParams)
+	} else {
+		manifestUrl, err = getPurchasedManUrl(skuID, videoID, streamParams.UserID, uguID)
+	}
+
 	if err != nil {
 		fmt.Println("Failed to get video file metadata.")
 		return err
@@ -1472,7 +1508,7 @@ func catalogPlist(_plistId, legacyToken string, cfg *Config, streamParams *Strea
 	return err
 }
 
-func paidLstream(query string, cfg *Config, streamParams *StreamParams) error {
+func paidLstream(query, uguID string, cfg *Config, streamParams *StreamParams) error {
     q, err := url.ParseQuery(query)
 	if err != nil {
 		return err
@@ -1481,7 +1517,7 @@ func paidLstream(query string, cfg *Config, streamParams *StreamParams) error {
 	if showId == "" {
 		return errors.New("url didn't contain a show id parameter")
 	}
-	err = video(showId, cfg, streamParams, true)
+	err = video(showId, uguID, cfg, streamParams, true)
 	return err
 }
 
@@ -1529,14 +1565,14 @@ func main() {
 	if err != nil {
 		handleErr("Failed to get subcription info.", err, true)
 	}
-	if !subInfo.IsContentAccessible {
-		panic("Account subscription required.")
-	}
-	legacyToken, err := extractLegToken(token)
+	legacyToken, uguID, err := extractLegToken(token)
 	if err != nil {
 		handleErr("Failed to extract legacy token.", err, true)
 	}
 	planDesc, isPromo := getPlan(subInfo)
+	if !subInfo.IsContentAccessible {
+		planDesc = "no active subscription"
+	}
 	fmt.Println(
 		"Signed in successfully - " + planDesc + "\n",
 	)
@@ -1558,13 +1594,13 @@ func main() {
 		case 2:
 			itemErr = catalogPlist(itemId, legacyToken, cfg, streamParams)
 		case 3:
-			itemErr = video(itemId, cfg, streamParams, false)
+			itemErr = video(itemId, "", cfg, streamParams, false)
 		case 4:
 			itemErr = artist(itemId, cfg, streamParams)
 		case 5, 6:
-			itemErr = video(itemId, cfg, streamParams, true)
+			itemErr = video(itemId, "", cfg, streamParams, true)
 		case 7:
-			itemErr = paidLstream(itemId, cfg, streamParams)
+			itemErr = paidLstream(itemId, uguID, cfg, streamParams)
 		}
 		if itemErr != nil {
 			handleErr("Item failed.", itemErr, false)
