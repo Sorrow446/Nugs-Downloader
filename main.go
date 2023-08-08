@@ -380,15 +380,15 @@ func parseStreamParams(userId string, subInfo *SubInfo, isPromo bool) *StreamPar
 	startStamp, endStamp := parseTimestamps(subInfo.StartedAt, subInfo.EndsAt)
 	streamParams := &StreamParams{
 		SubscriptionID:          subInfo.LegacySubscriptionID,
-		SubCostplanIDAccessList: subInfo.Plan.ID,
+		SubCostplanIDAccessList: subInfo.Plan.PlanID,
 		UserID:                  userId,
 		StartStamp:              startStamp,
 		EndStamp:                endStamp,
 	}
 	if isPromo {
-		streamParams.SubCostplanIDAccessList = subInfo.Promo.Plan.ID
+		streamParams.SubCostplanIDAccessList = subInfo.Promo.Plan.PlanID
 	} else {
-		streamParams.SubCostplanIDAccessList = subInfo.Plan.ID
+		streamParams.SubCostplanIDAccessList = subInfo.Plan.PlanID
 	}
 	return streamParams
 }
