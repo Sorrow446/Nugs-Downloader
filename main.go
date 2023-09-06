@@ -55,7 +55,7 @@ var (
 )
 
 var regexStrings = [8]string{
-	`^https://play.nugs.net/#/catalog/recording/(\d+)$`,
+	`^https://play.nugs.net/release/(\d+)$`,
 	`^https://play.nugs.net/#/playlists/playlist/(\d+)$`,
 	`(^https://2nu.gs/[a-zA-Z\d]+$)`,
 	`^https://play.nugs.net/#/videos/artist/\d+/.+/(\d+)$`,
