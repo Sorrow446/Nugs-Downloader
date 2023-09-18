@@ -60,7 +60,7 @@ var regexStrings = [8]string{
 	`(^https://2nu.gs/[a-zA-Z\d]+$)`,
 	`^https://play.nugs.net/#/videos/artist/\d+/.+/(\d+)$`,
 	`^https://play.nugs.net/#/artist/(\d+)(?:/albums|/latest|)$`,
-	`^https://play.nugs.net/#/exclusive-livestreams/container/(\d+)$`,
+	`^https://play.nugs.net/livestream/(\d+)/exclusive$`,
 	`^https://play.nugs.net/#/my-webcasts/\d+-(\d+)-\d+-\d+$`,
 	`^https://www.nugs.net/on/demandware.store/Sites-NugsNet-Site/d`+
 		`efault/Stash-QueueVideo\?([a-zA-Z0-9=%&-]+$)`,
