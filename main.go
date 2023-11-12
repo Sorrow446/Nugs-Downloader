@@ -54,17 +54,18 @@ var (
 	client = &http.Client{Jar: jar}
 )
 
-var regexStrings = [8]string{
+var regexStrings = [10]string{
 	`^https://play.nugs.net/release/(\d+)$`,
 	`^https://play.nugs.net/#/playlists/playlist/(\d+)$`,
+	`^https://play.nugs.net/library/playlist/(\d+)$`,
 	`(^https://2nu.gs/[a-zA-Z\d]+$)`,
 	`^https://play.nugs.net/#/videos/artist/\d+/.+/(\d+)$`,
-	`^https://play.nugs.net/#/artist/(\d+)(?:/albums|/latest|)$`,
+	`^https://play.nugs.net/artist/(\d+)(?:/albums|/latest|)$`,
 	`^https://play.nugs.net/livestream/(\d+)/exclusive$`,
+	`^https://play.nugs.net/watch/livestreams/exclusive/(\d+)$`,
 	`^https://play.nugs.net/#/my-webcasts/\d+-(\d+)-\d+-\d+$`,
 	`^https://www.nugs.net/on/demandware.store/Sites-NugsNet-Site/d`+
 		`efault/Stash-QueueVideo\?([a-zA-Z0-9=%&-]+$)`,
-
 }
 
 var qualityMap = map[string]Quality{
@@ -916,23 +917,34 @@ func processTrack(folPath string, trackNum, trackTotal int, cfg *Config, track *
 	return nil
 }
 
-func album(albumId string, cfg *Config, streamParams *StreamParams, artResp *AlbArtResp) error {
+func album(albumID string, cfg *Config, streamParams *StreamParams, artResp *AlbArtResp) error {
 	var (
 		meta   *AlbArtResp
 		tracks []Track
 	)
-	if albumId == "" {
+	if albumID == "" {
 		meta = artResp
 		tracks = meta.Songs
 	} else {
-		_meta, err := getAlbumMeta(albumId)
+		_meta, err := getAlbumMeta(albumID)
 		if err != nil {
 			fmt.Println("Failed to get album metadata.")
 			return err
 		}
-		meta = &_meta.Response
+		meta = _meta.Response
 		tracks = meta.Tracks
 	}
+
+	trackTotal := len(tracks)
+
+	if trackTotal < 1 {
+		skuID := getVideoSku(meta.Products)
+		if skuID == 0 {
+			return errors.New("release has no tracks")
+		}
+		return video(albumID, "", cfg, streamParams, meta, false)
+	}
+
 	albumFolder := meta.ArtistName + " - " + strings.TrimRight(meta.ContainerInfo, " ")
 	fmt.Println(albumFolder)
 	if len(albumFolder) > 120 {
@@ -946,7 +958,6 @@ func album(albumId string, cfg *Config, streamParams *StreamParams, artResp *Alb
 		fmt.Println("Failed to make album folder.")
 		return err
 	}
-	trackTotal := len(tracks)
 	for trackNum, track := range tracks {
 		trackNum++
 		err := processTrack(
@@ -1136,16 +1147,23 @@ func getSegUrls(manifestUrl, query string) ([]string, error) {
 }
 
 func downloadVideo(videoPath, _url string) error {
-	f, err := os.OpenFile(videoPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0755)
+	f, err := os.OpenFile(videoPath, os.O_CREATE|os.O_WRONLY, 0755)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
+
+	stat, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	startByte := stat.Size()
+
 	req, err := http.NewRequest(http.MethodGet, _url, nil)
 	if err != nil {
 		return err
 	}
-	req.Header.Add("Range", "bytes=0-")
+	req.Header.Add("Range", fmt.Sprintf("bytes=%d-", startByte))
 	do, err := client.Do(req)
 	if err != nil {
 		return err
@@ -1159,6 +1177,10 @@ func downloadVideo(videoPath, _url string) error {
 		Total:     totalBytes,
 		TotalStr:  humanize.Bytes(uint64(totalBytes)),
 		StartTime: time.Now().UnixMilli(),
+		Downloaded: startByte,
+	}
+	if startByte > 0 {
+		fmt.Printf("TS already exists locally, resuming from byte %d...\n", startByte)
 	}
 	_, err = io.Copy(f, io.TeeReader(do.Body, counter))
 	fmt.Println("")
@@ -1350,7 +1372,7 @@ func getLstreamContainer(containers []*AlbArtResp) *AlbArtResp {
 func parseLstreamMeta(_meta *ArtistMeta) *AlbumMeta {
 	meta := getLstreamContainer(_meta.Response.Containers)
 	parsed := &AlbumMeta{
-		Response: AlbArtResp{
+		Response: &AlbArtResp{
 			ArtistName:        meta.ArtistName,
 			ContainerInfo:     meta.ContainerInfo,
 			ContainerID:       meta.ContainerID,
@@ -1362,17 +1384,25 @@ func parseLstreamMeta(_meta *ArtistMeta) *AlbumMeta {
 	return parsed
 }
 
-func video(videoID, uguID string, cfg *Config, streamParams *StreamParams, isLstream bool) error {
+func video(videoID, uguID string, cfg *Config, streamParams *StreamParams, _meta *AlbArtResp, isLstream bool) error {
 	var (
 		skuID int
 		manifestUrl string
+		meta *AlbArtResp
+		err error
 	)
-	_meta, err := getAlbumMeta(videoID)
-	if err != nil {
-		fmt.Println("Failed to get videos metadata.")
-		return err
+	if _meta != nil {
+		meta = _meta
+	} else {
+		m, err := getAlbumMeta(videoID)
+		if err != nil {
+			fmt.Println("Failed to get metadata.")
+			return err
+		}
+		meta = m.Response
 	}
-	meta := _meta.Response
+
+	
 	chapsAvail := !reflect.ValueOf(meta.VideoChapters).IsZero()
 	videoFname := meta.ArtistName + " - " + strings.TrimRight(meta.ContainerInfo, " ")
 	if len(videoFname) > 110 {
@@ -1517,7 +1547,7 @@ func paidLstream(query, uguID string, cfg *Config, streamParams *StreamParams) e
 	if showId == "" {
 		return errors.New("url didn't contain a show id parameter")
 	}
-	err = video(showId, uguID, cfg, streamParams, true)
+	err = video(showId, uguID, cfg, streamParams, nil, true)
 	return err
 }
 
@@ -1589,17 +1619,17 @@ func main() {
 		switch mediaType {
 		case 0:
 			itemErr = album(itemId, cfg, streamParams, nil)
-		case 1:
+		case 1, 2:
 			itemErr = playlist(itemId, legacyToken, cfg, streamParams, false)
-		case 2:
-			itemErr = catalogPlist(itemId, legacyToken, cfg, streamParams)
 		case 3:
-			itemErr = video(itemId, "", cfg, streamParams, false)
+			itemErr = catalogPlist(itemId, legacyToken, cfg, streamParams)
 		case 4:
+			itemErr = video(itemId, "", cfg, streamParams, nil, false)
+		case 5:
 			itemErr = artist(itemId, cfg, streamParams)
-		case 5, 6:
-			itemErr = video(itemId, "", cfg, streamParams, true)
-		case 7:
+		case 6, 7, 8:
+			itemErr = video(itemId, "", cfg, streamParams, nil, true)
+		case 9:
 			itemErr = paidLstream(itemId, uguID, cfg, streamParams)
 		}
 		if itemErr != nil {
