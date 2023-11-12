@@ -26,12 +26,12 @@ If you don't have root in Linux, you can have Nugs Downloader look for the binar
 ## Supported Media
 |Type|URL example|
 | --- | --- |
-|Album|`https://play.nugs.net/#/catalog/recording/23329`
+|Album|`https://play.nugs.net/release/23329`
 |Artist|`https://play.nugs.net/#/artist/461/latest`, `https://play.nugs.net/#/artist/461`
 |Catalog playlist|`https://2nu.gs/3PmqXLW`
-|Exclusive Livestream|`https://play.nugs.net/#/exclusive-livestreams/container/30119`
+|Exclusive Livestream|`https://play.nugs.net/watch/livestreams/exclusive/30119`
 |Purchased Livestream|`https://www.nugs.net/on/demandware.store/Sites-NugsNet-Site/default/Stash-QueueVideo?skuID=624598&showID=30367&perfDate=10-29-2022&artistName=Billy%20Strings&location=10-29-2022%20Exploreasheville%2ecom%20Arena%20Asheville%2c%20NC&format=liveHdStream` Wrap in double quotes on Windows. 
-|User playlist|`https://play.nugs.net/#/playlists/playlist/1215400`
+|User playlist|`https://play.nugs.net/#/playlists/playlist/1215400`, `https://play.nugs.net/library/playlist/1261211`
 |Video|`https://play.nugs.net/#/videos/artist/1045/Dead%20and%20Company/container/27323` Wrap in double quotes on Windows.
 |Webcast|`https://play.nugs.net/#/my-webcasts/5826189-30369-0-624602`
 
