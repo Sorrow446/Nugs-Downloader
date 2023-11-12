@@ -303,7 +303,7 @@ type AlbumMeta struct {
 	MethodName                  string     `json:"methodName"`
 	ResponseAvailabilityCode    int        `json:"responseAvailabilityCode"`
 	ResponseAvailabilityCodeStr string     `json:"responseAvailabilityCodeStr"`
-	Response                    AlbArtResp `json:"Response"`
+	Response                    *AlbArtResp `json:"Response"`
 }
 
 type Token struct {
