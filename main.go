@@ -245,6 +245,7 @@ func parseCfg() (*Config, error) {
 		fmt.Println("Failed to process URLs.")
 		return nil, err
 	}
+	cfg.ForceVideo = args.ForceVideo
 	return cfg, nil
 }
 
@@ -937,14 +938,17 @@ func album(albumID string, cfg *Config, streamParams *StreamParams, artResp *Alb
 
 	trackTotal := len(tracks)
 
-	if trackTotal < 1 {
-		skuID := getVideoSku(meta.Products)
-		if skuID == 0 {
-			return errors.New("release has no tracks")
-		}
-		return video(albumID, "", cfg, streamParams, meta, false)
+	skuID := getVideoSku(meta.Products)
+
+	if skuID == 0 && trackTotal < 1 {
+		return errors.New("release has no tracks or videos")
 	}
 
+	if skuID != 0 {
+		if cfg.ForceVideo || trackTotal < 1 {
+			return video(albumID, "", cfg, streamParams, meta, false)
+		}
+	}
 	albumFolder := meta.ArtistName + " - " + strings.TrimRight(meta.ContainerInfo, " ")
 	fmt.Println(albumFolder)
 	if len(albumFolder) > 120 {
