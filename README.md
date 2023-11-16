@@ -39,10 +39,10 @@ If you don't have root in Linux, you can have Nugs Downloader look for the binar
 Args take priority over the config file.
 
 Download two albums:   
-`nugs_dl_x64.exe https://play.nugs.net/#/catalog/recording/23329 https://play.nugs.net/#/catalog/recording/23790`
+`nugs_dl_x64.exe https://play.nugs.net/release/23329 https://play.nugs.net/release/23790`
 
 Download a single album and from two text files:   
-`nugs_dl_x64.exe https://play.nugs.net/#/catalog/recording/23329 G:\1.txt G:\2.txt`
+`nugs_dl_x64.exe https://play.nugs.net/release/23329 G:\1.txt G:\2.txt`
 
 Download a user playlist and video:
 `nugs_dl_x64.exe https://play.nugs.net/#/playlists/playlist/1215400 "https://play.nugs.net/#/videos/artist/1045/Dead%20and%20Company/container/27323"`
