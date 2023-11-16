@@ -246,6 +246,7 @@ func parseCfg() (*Config, error) {
 		return nil, err
 	}
 	cfg.ForceVideo = args.ForceVideo
+	cfg.SkipVideos = args.SkipVideos
 	return cfg, nil
 }
 
@@ -929,7 +930,7 @@ func album(albumID string, cfg *Config, streamParams *StreamParams, artResp *Alb
 	} else {
 		_meta, err := getAlbumMeta(albumID)
 		if err != nil {
-			fmt.Println("Failed to get album metadata.")
+			fmt.Println("Failed to get metadata.")
 			return err
 		}
 		meta = _meta.Response
@@ -984,21 +985,26 @@ func getAlbumTotal(meta []*ArtistMeta) int {
 func artist(artistId string, cfg *Config, streamParams *StreamParams) error {
 	meta, err := getArtistMeta(artistId)
 	if err != nil {
-		fmt.Println("Failed to get artist albums metadata.")
+		fmt.Println("Failed to get artist metadata.")
 		return err
 	}
 	if len(meta) == 0 {
 		return errors.New(
-			"The API didn't return any artist albums metadata.")
+			"The API didn't return any artist metadata.")
 	}
 	fmt.Println(meta[0].Response.Containers[0].ArtistName)
 	albumTotal := getAlbumTotal(meta)
 	for _, _meta := range meta {
 		for albumNum, container := range _meta.Response.Containers {
-			fmt.Printf("Album %d of %d:\n", albumNum+1, albumTotal)
-			err := album("", cfg, streamParams, container)
+			fmt.Printf("Item %d of %d:\n", albumNum+1, albumTotal)
+			if cfg.SkipVideos {
+				err = album("", cfg, streamParams, container)
+			} else {
+				// Can't re-use this metadata as it doesn't have any product info for videos.
+				err = album(strconv.Itoa(container.ContainerID), cfg, streamParams, nil)
+			}
 			if err != nil {
-				return err
+				handleErr("Item failed.", err, false)
 			}
 		}
 	}
