@@ -76,7 +76,8 @@ Options:
                          5 = 4K / best available [default: -1]
   --outpath OUTPATH, -o OUTPATH
                          Where to download to. Path will be made if it doesn't already exist.
-  --forcevideo, -v       Forces video when it co-exists with audio in release URLs.
+  --force-video          Forces video when it co-exists with audio in release URLs.
+  --skip-videos          Skips videos in artist URLs.
   --help, -h             display this help and exit
   ```
  
