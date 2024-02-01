@@ -947,7 +947,7 @@ func album(albumID string, cfg *Config, streamParams *StreamParams, artResp *Alb
 
 	if skuID != 0 {
 		if cfg.SkipVideos {
-			fmt.Println("Configuration is set to skip videos, so not downloading")
+			fmt.Println("Video-only album, skipped")
 			return nil
 		}
 		if cfg.ForceVideo || trackTotal < 1 {
