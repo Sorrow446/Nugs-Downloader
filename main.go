@@ -240,17 +240,13 @@ func parseCfg() (*Config, error) {
 	} else {
 		cfg.FfmpegNameStr = "./ffmpeg"
 	}
-	if cfg.SkipVideos {
-		cfg.SkipVideos = true
-	} else {
-		cfg.SkipVideos = args.SkipVideos
-	}
 	cfg.Urls, err = processUrls(args.Urls)
 	if err != nil {
 		fmt.Println("Failed to process URLs.")
 		return nil, err
 	}
 	cfg.ForceVideo = args.ForceVideo
+	cfg.SkipVideos = args.SkipVideos
 	return cfg, nil
 }
 
