@@ -247,6 +247,7 @@ func parseCfg() (*Config, error) {
 	}
 	cfg.ForceVideo = args.ForceVideo
 	cfg.SkipVideos = args.SkipVideos
+	cfg.SkipChapters = args.SkipChapters
 	return cfg, nil
 }
 
@@ -947,7 +948,7 @@ func album(albumID string, cfg *Config, streamParams *StreamParams, artResp *Alb
 
 	if skuID != 0 {
 		if cfg.SkipVideos {
-			fmt.Println("Video-only album, skipped")
+			fmt.Println("Video-only album, skipped.")
 			return nil
 		}
 		if cfg.ForceVideo || trackTotal < 1 {
@@ -1186,15 +1187,18 @@ func downloadVideo(videoPath, _url string) error {
 	if do.StatusCode != http.StatusOK && do.StatusCode != http.StatusPartialContent {
 		return errors.New(do.Status)
 	}
+
+	if startByte > 0 {
+		fmt.Printf("TS already exists locally, resuming from byte %d...\n", startByte)
+		startByte = 0
+	}
+
 	totalBytes := do.ContentLength
 	counter := &WriteCounter{
 		Total:     totalBytes,
 		TotalStr:  humanize.Bytes(uint64(totalBytes)),
 		StartTime: time.Now().UnixMilli(),
 		Downloaded: startByte,
-	}
-	if startByte > 0 {
-		fmt.Printf("TS already exists locally, resuming from byte %d...\n", startByte)
 	}
 	_, err = io.Copy(f, io.TeeReader(do.Body, counter))
 	fmt.Println("")
@@ -1298,6 +1302,7 @@ func getNextChapStart(chapters []interface{}, idx int) float64 {
 	return 0
 }
 
+
 func writeChapsFile(chapters []interface{}, dur int) error {
 	f, err := os.OpenFile(chapsFileFname, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0755)
 	if err != nil {
@@ -1309,8 +1314,24 @@ func writeChapsFile(chapters []interface{}, dur int) error {
 		return err
 	}
 	chaptersCount := len(chapters)
+
+	var nextChapStart float64
+
 	for i, chapter := range chapters {
 		i++
+		isLast := i == chaptersCount
+
+		// casting to struct won't work.
+		m := chapter.(map[string]interface{})
+		start := m["chapterSeconds"].(float64)
+
+		if !isLast {
+			nextChapStart = getNextChapStart(chapters, i)
+			if nextChapStart <= start {
+				continue
+			}
+		}
+
 		_, err := f.WriteString("\n[CHAPTER]\n")
 		if err != nil {
 			return err
@@ -1319,22 +1340,19 @@ func writeChapsFile(chapters []interface{}, dur int) error {
 		if err != nil {
 			return err
 		}
-		// casting to struct won't work.
-		m := chapter.(map[string]interface{})
-		start := m["chapterSeconds"].(float64)
+
 		startLine := fmt.Sprintf("START=%d\n", int(math.Round(start)))
 		_, err = f.WriteString(startLine)
 		if err != nil {
 			return err
 		}
-		if i == chaptersCount {
+		if isLast {
 			endLine := fmt.Sprintf("END=%d\n", dur)
 			_, err = f.WriteString(endLine)
 			if err != nil {
 				return err
 			}
 		} else {
-			nextChapStart := getNextChapStart(chapters, i)
 			endLine := fmt.Sprintf("END=%d\n", int(math.Round(nextChapStart)-1))
 			_, err = f.WriteString(endLine)
 			if err != nil {
@@ -1400,11 +1418,13 @@ func parseLstreamMeta(_meta *ArtistMeta) *AlbumMeta {
 
 func video(videoID, uguID string, cfg *Config, streamParams *StreamParams, _meta *AlbArtResp, isLstream bool) error {
 	var (
+		chapsAvail bool
 		skuID int
 		manifestUrl string
 		meta *AlbArtResp
 		err error
 	)
+
 	if _meta != nil {
 		meta = _meta
 	} else {
@@ -1416,9 +1436,12 @@ func video(videoID, uguID string, cfg *Config, streamParams *StreamParams, _meta
 		meta = m.Response
 	}
 
+	if !cfg.SkipChapters {
+		chapsAvail = !reflect.ValueOf(meta.VideoChapters).IsZero()
+	}
 	
-	chapsAvail := !reflect.ValueOf(meta.VideoChapters).IsZero()
 	videoFname := meta.ArtistName + " - " + strings.TrimRight(meta.ContainerInfo, " ")
+	fmt.Println(videoFname)
 	if len(videoFname) > 110 {
 		videoFname = videoFname[:110]
 		fmt.Println(
@@ -1467,11 +1490,16 @@ func video(videoID, uguID string, cfg *Config, streamParams *StreamParams, _meta
 		fmt.Println("Failed to get video manifest base URL.")
 		return err
 	}
+
 	segUrls, err := getSegUrls(manBaseUrl+variant.URI, query)
 	if err != nil {
 		fmt.Println("Failed to get video segment URLs.")
 		return err
 	}
+
+	// Player album page videos aren't always only the first seg for the entire vid.
+	isLstream = segUrls[0] != segUrls[1]
+
 	if !isLstream {
 		fmt.Printf("%.3f FPS, ", variant.FrameRate)
 	}

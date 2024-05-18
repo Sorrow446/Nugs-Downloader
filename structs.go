@@ -23,15 +23,17 @@ type Config struct {
 	FfmpegNameStr   string
 	ForceVideo      bool
 	SkipVideos		bool
+	SkipChapters	bool
 }
 
 type Args struct {
-	Urls        []string `arg:"positional, required"`
-	Format      int      `arg:"-f" default:"-1" help:"Track download format.\n\t\t\t 1 = 16-bit / 44.1 kHz ALAC\n\t\t\t 2 = 16-bit / 44.1 kHz FLAC\n\t\t\t 3 = 24-bit / 48 kHz MQA\n\t\t\t 4 = 360 Reality Audio / best available\n\t\t\t 5 = 150 Kbps AAC"`
-	VideoFormat int      `arg:"-F" default:"-1" help:"Video download format.\n\t\t\t 1 = 480p\n\t\t\t 2 = 720p\n\t\t\t 3 = 1080p\n\t\t\t 4 = 1440p\n\t\t\t 5 = 4K / best available"`
-	OutPath     string   `arg:"-o" help:"Where to download to. Path will be made if it doesn't already exist."`
-	ForceVideo  bool     `arg:"--force-video" help:"Forces video when it co-exists with audio in release URLs."`
-	SkipVideos  bool     `arg:"--skip-videos" help:"Skips videos in artist URLs."`
+	Urls         []string `arg:"positional, required"`
+	Format       int      `arg:"-f" default:"-1" help:"Track download format.\n\t\t\t 1 = 16-bit / 44.1 kHz ALAC\n\t\t\t 2 = 16-bit / 44.1 kHz FLAC\n\t\t\t 3 = 24-bit / 48 kHz MQA\n\t\t\t 4 = 360 Reality Audio / best available\n\t\t\t 5 = 150 Kbps AAC"`
+	VideoFormat  int      `arg:"-F" default:"-1" help:"Video download format.\n\t\t\t 1 = 480p\n\t\t\t 2 = 720p\n\t\t\t 3 = 1080p\n\t\t\t 4 = 1440p\n\t\t\t 5 = 4K / best available"`
+	OutPath      string   `arg:"-o" help:"Where to download to. Path will be made if it doesn't already exist."`
+	ForceVideo   bool     `arg:"--force-video" help:"Forces video when it co-exists with audio in release URLs."`
+	SkipVideos   bool     `arg:"--skip-videos" help:"Skips videos in artist URLs."`
+	SkipChapters bool     `arg:"--skip-chapters" help:"Skips chapters for videos."`
 }
 
 type Auth struct {
