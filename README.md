@@ -78,6 +78,7 @@ Options:
                          Where to download to. Path will be made if it doesn't already exist.
   --force-video          Forces video when it co-exists with audio in release URLs.
   --skip-videos          Skips videos in artist URLs.
+  --skip-chapters        Skips chapters for videos.
   --help, -h             display this help and exit
   ```
  
