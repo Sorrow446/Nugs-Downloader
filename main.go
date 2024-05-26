@@ -261,6 +261,16 @@ func readConfig() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	data, err = ioutil.ReadFile("config.local.json")
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	if err == nil {
+		err = json.Unmarshal(data, &obj)
+		if err != nil {
+			return nil, err
+		}
+	}
 	return &obj, nil
 }
 
