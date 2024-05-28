@@ -1051,7 +1051,8 @@ func playlist(plistId, legacyToken string, cfg *Config, streamParams *StreamPara
 
 func getVideoSku(products []Product) int {
 	for _, product := range products {
-		if product.FormatStr == "VIDEO ON DEMAND" {
+		formatStr := product.FormatStr
+		if formatStr == "VIDEO ON DEMAND" || formatStr == "LIVE HD VIDEO" {
 			return product.SkuID
 		}
 	}
