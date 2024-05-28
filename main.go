@@ -286,7 +286,8 @@ func fileExists(path string) (bool, error) {
 }
 
 func sanitise(filename string) string {
-	return regexp.MustCompile(sanRegexStr).ReplaceAllString(filename, "_")
+	san := regexp.MustCompile(sanRegexStr).ReplaceAllString(filename, "_")
+	return strings.TrimSuffix(san, "\t")
 }
 
 func auth(email, pwd string) (string, error) {
