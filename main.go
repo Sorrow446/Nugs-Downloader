@@ -261,6 +261,16 @@ func readConfig() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	data, err = ioutil.ReadFile("config.local.json")
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	if err == nil {
+		err = json.Unmarshal(data, &obj)
+		if err != nil {
+			return nil, err
+		}
+	}
 	return &obj, nil
 }
 
@@ -1378,7 +1388,7 @@ func tsToMp4(VidPathTs, vidPath, ffmpegNameStr string, chapAvail bool) error {
 	if chapAvail {
 		args = []string{
 			"-hide_banner", "-i", VidPathTs, "-f", "ffmetadata",
-			"-i", chapsFileFname, "-map_metadata", "1", "-c", "copy", vidPath,
+			"-i", chapsFileFname, "-map_chapters", "1", "-c", "copy", vidPath,
 		}
 	} else {
 		args = []string{"-hide_banner", "-i", VidPathTs, "-c", "copy", vidPath}
