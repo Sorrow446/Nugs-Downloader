@@ -65,7 +65,7 @@ var regexStrings = [10]string{
 	`^https://play.nugs.net/watch/livestreams/exclusive/(\d+)$`,
 	`^https://play.nugs.net/#/my-webcasts/\d+-(\d+)-\d+-\d+$`,
 	`^https://www.nugs.net/on/demandware.store/Sites-NugsNet-Site/d`+
-		`efault/Stash-QueueVideo\?([a-zA-Z0-9=%&-]+$)`,
+		`efault/(?:Stash-QueueVideo|NugsVideo-GetStashVideo)\?([a-zA-Z0-9=%&-]+$)`,
 }
 
 var qualityMap = map[string]Quality{
