@@ -54,7 +54,7 @@ var (
 	client = &http.Client{Jar: jar}
 )
 
-var regexStrings = [10]string{
+var regexStrings = [11]string{
 	`^https://play.nugs.net/release/(\d+)$`,
 	`^https://play.nugs.net/#/playlists/playlist/(\d+)$`,
 	`^https://play.nugs.net/library/playlist/(\d+)$`,
@@ -66,6 +66,7 @@ var regexStrings = [10]string{
 	`^https://play.nugs.net/#/my-webcasts/\d+-(\d+)-\d+-\d+$`,
 	`^https://www.nugs.net/on/demandware.store/Sites-NugsNet-Site/d`+
 		`efault/(?:Stash-QueueVideo|NugsVideo-GetStashVideo)\?([a-zA-Z0-9=%&-]+$)`,
+	`^https://play.nugs.net/library/webcast/(\d+)$`,
 }
 
 var qualityMap = map[string]Quality{
@@ -1667,7 +1668,7 @@ func main() {
 			itemErr = playlist(itemId, legacyToken, cfg, streamParams, false)
 		case 3:
 			itemErr = catalogPlist(itemId, legacyToken, cfg, streamParams)
-		case 4:
+		case 4, 10:
 			itemErr = video(itemId, "", cfg, streamParams, nil, false)
 		case 5:
 			itemErr = artist(itemId, cfg, streamParams)
